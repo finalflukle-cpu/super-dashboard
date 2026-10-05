@@ -2972,16 +2972,23 @@ function renderSuper(){
   const newLeadIdx = STATUS_NAMES.indexOf('New Lead');
   const staleBy = {}; let staleN = 0;
   FOCUS_LEADS.forEach(r => { if(r.ss !== newLeadIdx || !isActiveSale(r.s)) return; const dd = daysSince(r.su); if(dd !== null && dd > 3){ staleN++; staleBy[r.s] = (staleBy[r.s] || 0) + 1; } });
-  const doneStatus = new Set(['Success','Not interested','Not Lead','Not lead','Refund','Not Renewed']);
-  const d30I = toIntDate(d30);
-  const hotBy = {}; let hotN = 0;
-  FOCUS_LEADS.forEach(r => { if(r.q !== 'D' || !isActiveSale(r.s) || r.su === null || r.su < d30I || doneStatus.has(STATUS_NAMES[r.ss])) return; hotN++; hotBy[r.s] = (hotBy[r.s] || 0) + 1; });
+  // Lead ที่อยู่ระหว่างปิดการขาย = สถานะการขายอยู่ในขั้นของเซล (Demo / ติดตามหลัง Demo) และอัปเดตภายใน 14 วัน
+  const DEMO_ST = new Set(['Online Demo', 'Onsite Demo', 'Follow Demo Sales']);
+  const FOLLOW_ST = new Set(['Follow Sales', 'Follow AT Sale', 'Re-contact Sale']);
+  const d14I = toIntDate(isoOf(new Date(today.getTime() - 14*86400000)));
+  const hotBy = {}; let hotN = 0, hotDemo = 0, hotFollow = 0;
+  FOCUS_LEADS.forEach(r => {
+    if(!isActiveSale(r.s) || r.su === null || r.su < d14I) return;
+    const st = STATUS_NAMES[r.ss];
+    if(DEMO_ST.has(st)) hotDemo++; else if(FOLLOW_ST.has(st)) hotFollow++; else return;
+    hotN++; hotBy[r.s] = (hotBy[r.s] || 0) + 1;
+  });
   const topList = obj => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([i, n]) => `${escHtml(SALE_NAMES[i].n.split(' ')[0])} ${n}`).join(' · ');
   const issues = dataIssueCount();
   html += `<div class="panel"><div class="panel-head"><h2>สิ่งที่ต้องจัดการ</h2><span class="hint">อัปเดตตามข้อมูลล่าสุด · เฉพาะทีมที่ดูแล</span></div><div class="sd-actions">
     <div class="sd-act ${qns.length ? 'warn' : 'ok'}"><div class="sd-act-n">${fmtNum(qns.length)}</div><div><b>Lead ผ่านคุณสมบัติแต่ยังไม่มีเซลดูแล</b><div class="sd-act-sub">30 วันล่าสุด${qns.length ? ' · เช่น ' + qns.slice(0, 4).map(r => escHtml(r.lead)).join(', ') : ''}</div></div></div>
     <div class="sd-act ${staleN ? 'warn' : 'ok'}"><div class="sd-act-n">${fmtNum(staleN)}</div><div><b>Lead ใหม่ที่ยังไม่ติดต่อเกิน 3 วัน</b><div class="sd-act-sub">${staleN ? 'มากสุด: ' + topList(staleBy) : 'ไม่มีค้าง'}</div></div></div>
-    <div class="sd-act hot"><div class="sd-act-n">${fmtNum(hotN)}</div><div><b>Lead ระดับ Demo ที่กำลังเดินหน้า</b><div class="sd-act-sub">อัปเดตใน 30 วัน ยังไม่ปิด${hotN ? ' · มากสุด: ' + topList(hotBy) : ''}</div></div></div>
+    <div class="sd-act hot"><div class="sd-act-n">${fmtNum(hotN)}</div><div><b>Lead ที่อยู่ระหว่างปิดการขาย</b><div class="sd-act-sub">อัปเดตใน 14 วัน · Demo ${fmtNum(hotDemo)} · ติดตามหลัง Demo ${fmtNum(hotFollow)}${hotN ? ' · มากสุด: ' + topList(hotBy) : ''}</div></div></div>
     <div class="sd-act ${issues ? 'warn' : 'ok'} clickable" onclick="switchPage('data-check')"><div class="sd-act-n">${fmtNum(issues)}</div><div><b>เรื่องที่ต้องแก้ในชีท</b><div class="sd-act-sub">${issues ? 'กดเพื่อดูรายการในหน้า ตรวจข้อมูล' : 'ข้อมูลครบ'}</div></div></div>
   </div></div>`;
 
