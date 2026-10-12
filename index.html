@@ -535,6 +535,35 @@
   .sd-mix i{display:block;height:100%;}
   @media (max-width:960px){ .sd-grid2{grid-template-columns:1fr;} .sd-actions{grid-template-columns:1fr 1fr;} }
   @media (max-width:640px){ .sd-chart-wrap{overflow-x:auto;} .sd-chart-wrap svg{min-width:560px;} .sd-tiles{grid-template-columns:1fr 1fr;gap:10px;} .sd-tile{padding:12px;} .sd-tile-value{font-size:22px;} .sd-actions{grid-template-columns:1fr;} .sd-hbar{grid-template-columns:110px 1fr 32px;} }
+  /* ---- Demo Schedule ---- */
+  .dm-table th.dm-grp{text-align:center;background:#FFFBEA;border-bottom:1px solid var(--border);}
+  .dm-table th.dm-grp.nx{background:#EEF6FA;}
+  .dm-th-sub{font-size:11px;color:var(--text-secondary);font-weight:400;}
+  .dm-row{cursor:pointer;} .dm-row:hover td{background:#FAFAF6;} .dm-row.open td{background:#FFFBEA;}
+  .dm-row.dm-hit td:first-child{font-weight:600;}
+  .dm-caret{display:inline-block;width:12px;color:var(--text-secondary);}
+  .dm-prog{height:8px;background:#F0F0EB;border-radius:999px;overflow:hidden;min-width:90px;}
+  .dm-prog{display:flex;} .dm-prog i{display:block;height:100%;background:var(--accent);} .dm-prog i.ok{background:var(--success);} .dm-prog i.pend{background:#F2E7A6;}
+  .dm-gap{color:var(--danger);font-weight:700;} .dm-ok{color:var(--success);font-weight:600;font-size:12px;}
+  .dm-total td{border-top:2px solid var(--border);background:#FAFAF6;}
+  .dm-detail td{background:#FFFDF3;text-align:left !important;white-space:normal;}
+  .dm-list{width:100%;border-collapse:collapse;font-size:12.5px;} .dm-list td{padding:5px 8px;border-bottom:1px solid #F0F0EB;text-align:left !important;white-space:nowrap;}
+  .dm-list td.dm-ref{white-space:normal;color:var(--text-secondary);}
+  .dm-st{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;background:#F0F0EB;}
+  .dm-st.done{background:#E3F4EA;color:#1F7A47;} .dm-st.cancel{background:#FCE8E4;color:#B3402A;} .dm-st.pend{background:#EEF6FA;color:#1D6F8F;}
+  .dm-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--text-secondary);margin-top:10px;}
+  .dm-days{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:200px;}
+  .dm-day{display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;}
+  .dm-day-n{font-size:12px;font-weight:600;min-height:16px;}
+  .dm-col{width:60%;max-width:36px;height:140px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px;overflow:hidden;background:#F7F7F2;}
+  .dm-col i{display:block;width:100%;}
+  .dm-day-l{font-size:11.5px;color:var(--text-secondary);text-align:center;margin-top:4px;line-height:1.25;}
+  .dm-day.today .dm-day-l{color:var(--text-primary);font-weight:700;}
+  .dm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .dm-scroll{max-height:260px;overflow:auto;}
+  .dm-foot{font-size:12px;color:var(--text-secondary);margin:4px 0 24px 0;line-height:1.6;}
+  .dm-blocked h2{font-size:16px;margin:0 0 8px 0;} .dm-blocked p, .dm-blocked li{font-size:13.5px;line-height:1.6;} .dm-blocked ol{margin:0 0 14px 0;padding-left:20px;}
+  @media (max-width:640px){ .dm-days{height:170px;gap:4px;} .dm-col{height:110px;} .dm-table .dm-team{display:none;} .dm-table td.dm-name{white-space:normal;min-width:110px;max-width:130px;} .dm-table td, .dm-table th{padding-left:6px;padding-right:6px;} .dm-prog{min-width:60px;} .dm-detail td{max-width:90vw;} }
 </style>
 </head>
 <body>
@@ -547,6 +576,9 @@
     <div class="nav-group-label">แดชบอร์ด</div>
     <button class="nav-item nav-super" id="nav-super">
       ★ Super Dashboard
+    </button>
+    <button class="nav-item" id="nav-demo">
+      Demo Schedule
     </button>
     <button class="nav-item" id="nav-overview">
       ภาพรวมยอดขาย
@@ -603,6 +635,20 @@
       </div>
     </div>
     <div id="sd-body"></div>
+  </div>
+
+  <div class="page" id="page-demo">
+    <div class="page-head sd-head">
+      <div>
+        <h1>Demo Schedule</h1>
+        <p id="dm-sub">กำลังดึงข้อมูลการนัดหมาย…</p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="filter-group"><label>สัปดาห์ (จันทร์–อาทิตย์)</label><select id="dm-week"></select></div>
+        <div class="filter-group"><label>ทีม</label><select id="dm-team"></select></div>
+      </div>
+    </div>
+    <div id="dm-body"></div>
   </div>
 
   <div class="page" id="page-overview">
@@ -1244,7 +1290,7 @@ function updateSampleNote(){
 
 <script>
 // ---- Page navigation ----
-const PAGE_NAMES = ['super', 'overview', 'marketing', 'sales', 'focus', 'source-report', 'team-setup', 'data-check', 'settings'];
+const PAGE_NAMES = ['super', 'demo', 'overview', 'marketing', 'sales', 'focus', 'source-report', 'team-setup', 'data-check', 'settings'];
 let CURRENT_PAGE = 'super';
 let DATA_READY = false;
 PAGE_NAMES.forEach(n => document.getElementById('nav-' + n).addEventListener('click', () => switchPage(n)));
@@ -1266,6 +1312,7 @@ function switchPage(name){
   if(name === 'team-setup'){ renderTeamSetup(); }
   if(name === 'data-check'){ renderDataCheck(); }
   if(name === 'super'){ loadIOConfig(); renderSuper(); }
+  if(name === 'demo'){ renderDemo(); }
 }
 
 // ---- Marketing / Section data (shared across pages) ----
@@ -3182,6 +3229,343 @@ function setDataStatus(state, msg){
 }
 let INIT_DONE = false, LOADING = false;
 let DATA_MODE = '';   // 'live' | 'fallback'
+// ===== Demo Schedule: การนัดหมาย / Demo จาก API การนัดหมาย =====
+// แหล่งข้อมูล: ใช้ลิงก์ชีท (ถ้าใส่) ก่อน ไม่งั้นใช้ API
+const DEMO_API_URL = 'https://api-customer.supercoconut.co/api/report/appointment-demo-google-sheet';
+const DEMO_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQBsBSCVILOfg0j0aFdMyStLnkt6oAfwf_J4WQtmeYFbVSca7YsMSR7MWgs3V_ipyOxV6kxgXWPmNYj/pubhtml?gid=358187087&single=true';   // ชีทการนัดหมาย (Publish to web) — ถ้าว่างจะใช้ API
+const DEMO_WEEK_TARGET = 10;
+const DEMO_COUNTED = new Set(['online', 'onsite', 'visit']);   // นับ: Online, On Site, Visit Demo · ไม่นับ: Repeat Demo และอื่นๆ        // เป้า Demo ต่อคนต่อสัปดาห์
+let DEMO_ROWS = null;               // [{sale, d, type, kind, status, st, ref}]
+let DEMO_STATE = { state: 'idle', msg: '', cols: null, src: '' };
+let DEMO_INIT = false;
+
+// ---- อ่านค่าจากแถว (หัวคอลัมน์อาจสะกดต่างไปเล็กน้อย) ----
+function demoKeyFinder(keys){
+  const K = keys.map(k => ({ raw: k, n: normKey(k) }));
+  const find = (...tests) => { for(const t of tests){ const f = K.find(k => t(k.n)); if(f) return f.raw; } return null; };
+  return {
+    sale: find(n => n === 'sale ที่ดูแล', n => n.startsWith('sale ที่ดูแล'), n => n.includes('ที่ดูแล'), n => n === 'sale' || n === 'sales'),
+    date: find(n => n === 'วันที่นัดหมาย', n => n.startsWith('วันที่นัดหมาย'), n => n.includes('วันที่นัด'), n => n.includes('appointment') && n.includes('date')),
+    type: find(n => n === 'ประเภทการนัดหมาย', n => n.includes('ประเภทการนัด'), n => n.includes('ประเภท') && !n.includes('ลูกค้า') && !n.includes('ธุรกิจ'), n => n.includes('type')),
+    status: find(n => n === 'สถานะการนัดหมาย', n => n.includes('สถานะการนัด'), n => n.includes('สถานะ') && !n.includes('ขาย') && !n.includes('lead'), n => n === 'status' || n.includes('appointment status')),
+    lid: find(n => n === 'lead id', n => n.includes('lead id'), n => n === 'lid'),
+    purpose: find(n => n === 'จุดประสงค์', n => n.startsWith('จุดประสงค์'), n => n === 'purpose'),
+    attendees: find(n => n === 'ผู้เข้าร่วม', n => n.startsWith('ผู้เข้าร่วม')),
+    result: find(n => n === 'ผลการนัดหมาย', n => n.startsWith('ผลการนัด')),
+    shop: find(n => n.includes('ชื่อร้าน'), n => n.includes('ชื่อธุรกิจ'), n => n.includes('ชื่อบริษัท')),
+  };
+}
+// วันที่ → 'YYYY-MM-DD' (รองรับ ISO, มีเวลา, d/m/yyyy, ปี พ.ศ.)
+function demoDate(v){
+  if(v === null || v === undefined) return '';
+  let s = String(v).trim(); if(!s) return '';
+  if(/T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/.test(s)){
+    const dt = new Date(s);
+    if(!isNaN(dt)) return dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+  }
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  let y, mo, d;
+  if(m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/))){ d = +m[1]; mo = +m[2]; y = +m[3]; }
+  else if((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else return '';
+  if(y > 2400) y -= 543;
+  if(mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+// ประเภท: นับเฉพาะ Online และ On Site Visit Demo · Repeat แสดงแต่ไม่นับ
+function demoKind(type){
+  const t = String(type || '').toLowerCase();
+  if(/repeat/.test(t)) return 'repeat';
+  if(/visit/.test(t)) return 'visit';
+  if(/on\s*-?\s*site/.test(t)) return 'onsite';
+  if(/online/.test(t)) return 'online';
+  return 'other';
+}
+// สถานะ: ว่าง = ยังไม่ดำเนินการ
+function demoStatus(s){
+  const t = String(s || '').trim().toLowerCase();
+  if(!t || t === '-' || t === 'null') return 'pending';
+  if(/ยกเลิก|cancel/.test(t)) return 'cancel';
+  if(/ดำเนินการตามนัด|สำเร็จ|success|done|complete|เสร็จ|เรียบร้อย|attended/.test(t)) return 'done';
+  return 'other';
+}
+function buildDemoRows(rows){
+  if(!rows.length) return { list: [], cols: null };
+  const cols = demoKeyFinder(Object.keys(rows[0]));
+  const val = (r, k) => (k && r[k] !== null && r[k] !== undefined) ? String(r[k]).trim() : '';
+  // สนใจเฉพาะจุดประสงค์ = Demo (ถ้ามีคอลัมน์จุดประสงค์)
+  const src = cols.purpose ? rows.filter(r => /^demo$/i.test(val(r, cols.purpose))) : rows;
+  const list = src.map(r => {
+    const type = val(r, cols.type), status = val(r, cols.status);
+    let sale = val(r, cols.sale), saleGuess = false;
+    // ช่อง Sale ที่ดูแลว่าง → ใช้ผู้เข้าร่วมคนแรก
+    if((!sale || sale === '-') && cols.attendees){ const a = val(r, cols.attendees).split(',')[0].trim(); if(a){ sale = a; saleGuess = true; } }
+    return {
+      sale: (sale && sale !== '-') ? sale : '(ไม่ระบุเซล)', saleGuess,
+      res: val(r, cols.result),
+      d: demoDate(val(r, cols.date)),
+      type: type || '(ไม่ระบุประเภท)', kind: demoKind(type),
+      status: status, st: demoStatus(status),
+      lid: val(r, cols.lid), shop: val(r, cols.shop),
+    };
+  });
+  return { list, cols, total: rows.length };
+}
+async function fetchDemoRows(){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  try{
+    if(DEMO_SHEET_URL){
+      DEMO_STATE.src = 'sheet';
+      const res = await fetch(toCsvUrl(DEMO_SHEET_URL), { cache: 'no-store', signal: ctrl.signal });
+      if(!res.ok) throw new Error('ชีทการนัดหมายตอบกลับ ' + res.status);
+      const text = await res.text();
+      if(/^\s*<(!doctype|html)/i.test(text)) throw new Error('ชีทการนัดหมายยังไม่ได้เปิดแชร์แบบสาธารณะ');
+      // บรรทัดแรกๆ อาจเป็นหมายเหตุ → หาแถวหัวตารางที่มีคำว่า "วันที่นัดหมาย"
+      const all = parseCSV(text);
+      const hi = all.slice(0, 15).findIndex(r => r.some(v => /^(วันที่นัดหมาย|sale ที่ดูแล)$/i.test(String(v).trim())));
+      if(hi < 0) throw new Error('ไม่พบหัวตาราง (วันที่นัดหมาย) ในชีทการนัดหมาย');
+      const H = all[hi].map(h => String(h).trim());
+      return all.slice(hi + 1).filter(r => r.some(v => String(v).trim() !== '')).map(r => { const o = {}; H.forEach((k, j) => { if(k) o[k] = r[j] !== undefined ? r[j] : ''; }); return o; });
+    }
+    DEMO_STATE.src = 'api';
+    const res = await fetch(DEMO_API_URL, { cache: 'no-store', signal: ctrl.signal });
+    if(res.status === 401 || res.status === 403) throw new Error('AUTH');
+    if(!res.ok) throw new Error('API การนัดหมายตอบกลับ ' + res.status);
+    const data = await res.json();
+    const arr = Array.isArray(data) ? data : (Array.isArray(data && data.data) ? data.data : null);
+    if(!arr) throw new Error('รูปแบบข้อมูลจาก API การนัดหมายไม่ถูกต้อง');
+    return arr;
+  }catch(e){
+    if(e.name === 'AbortError') throw new Error((DEMO_STATE.src === 'sheet' ? 'ชีท' : 'API') + 'การนัดหมายตอบช้าเกิน 30 วินาที');
+    if(e instanceof TypeError) throw new Error('NETWORK');
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
+async function loadDemoData(){
+  DEMO_STATE.state = 'loading';
+  if(CURRENT_PAGE === 'demo') renderDemo();
+  try{
+    const rows = await fetchDemoRows();
+    const b = buildDemoRows(rows);
+    DEMO_ROWS = b.list; DEMO_STATE = { state: 'ok', msg: '', cols: b.cols, src: DEMO_STATE.src, total: b.total };
+  }catch(e){
+    DEMO_STATE = { state: 'error', msg: e.message || String(e), cols: DEMO_STATE.cols, src: DEMO_STATE.src };
+  }
+  if(CURRENT_PAGE === 'demo') renderDemo();
+}
+
+// ---- สัปดาห์ (จันทร์–อาทิตย์ ตามเวลาไทย) ----
+function demoToday(){ return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); }
+function demoAddDays(iso, n){ const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function demoMonday(iso){ const d = new Date(iso + 'T00:00:00Z'); const dow = (d.getUTCDay() + 6) % 7; return demoAddDays(iso, -dow); }
+const DEMO_TH_MON = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const DEMO_TH_DOW = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'];
+function demoDM(iso){ const [y, m, d] = iso.split('-').map(Number); return `${d} ${DEMO_TH_MON[m - 1]}`; }
+function demoWeekLabel(mon){ const sun = demoAddDays(mon, 6); return `${demoDM(mon)} – ${demoDM(sun)} ${+sun.slice(0, 4) + 543}`; }
+
+function initDemo(){
+  if(DEMO_INIT) return; DEMO_INIT = true;
+  const wk = document.getElementById('dm-week');
+  const cur = demoMonday(demoToday());
+  const opts = [];
+  for(let i = 0; i <= 12; i++){
+    const mon = demoAddDays(cur, -7 * i);
+    opts.push(`<option value="${mon}">${i === 0 ? 'สัปดาห์นี้' : i === 1 ? 'สัปดาห์ที่แล้ว' : i + ' สัปดาห์ก่อน'} · ${demoWeekLabel(mon)}</option>`);
+  }
+  wk.innerHTML = opts.join('');
+  wk.addEventListener('change', renderDemo);
+  document.getElementById('dm-team').addEventListener('change', renderDemo);
+  document.getElementById('dm-body').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-dm-sale]');
+    if(!tr) return;
+    const name = tr.getAttribute('data-dm-sale');
+    DEMO_OPEN = DEMO_OPEN === name ? null : name;
+    renderDemo();
+  });
+}
+let DEMO_OPEN = null;
+function demoTeamOptions(){
+  const sel = document.getElementById('dm-team');
+  const keep = sel.value || 'mine';
+  const teams = activeTeams(), ext = externalTeams();
+  sel.innerHTML = `<option value="mine">ทีมที่ดูแล (${teams.join(', ')})</option>`
+    + teams.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('')
+    + ext.map(t => `<option value="${escHtml(t)}">${escHtml(t)} (ไม่ได้ดูแล)</option>`).join('')
+    + `<option value="__other">ยังไม่จัดทีม / อื่นๆ</option><option value="__all">ทุกคน</option>`;
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : 'mine';
+}
+function demoInScope(team, scope){
+  if(scope === '__all') return true;
+  if(scope === 'mine') return activeTeams().includes(team);
+  if(scope === '__other') return !activeTeams().includes(team) && !externalTeams().includes(team);
+  return team === scope;
+}
+
+function renderDemo(){
+  const body = document.getElementById('dm-body');
+  if(!body) return;
+  if(!DEMO_INIT) initDemo();
+  demoTeamOptions();
+  const sub = document.getElementById('dm-sub');
+  if(DEMO_STATE.state === 'error' && !DEMO_ROWS){
+    sub.textContent = 'ยังดึงข้อมูลการนัดหมายไม่ได้';
+    const auth = DEMO_STATE.msg === 'AUTH', net = DEMO_STATE.msg === 'NETWORK';
+    body.innerHTML = `<div class="panel dm-blocked">
+      <h2>ยังเปิดอ่านข้อมูลการนัดหมายไม่ได้</h2>
+      ${auth ? `<p>ระบบตอบกลับว่า <b>ต้องเข้าสู่ระบบก่อน (401 Unauthorized)</b> — ลิงก์ API การนัดหมายยังไม่เปิดให้อ่านแบบเดียวกับลิงก์ Lead จึงดึงมาแสดงบนหน้าเว็บสาธารณะไม่ได้</p>
+        <p><b>ทางแก้ (เลือกอย่างใดอย่างหนึ่ง)</b></p>
+        <ol><li>ให้ทีม IT เปิด API นี้ให้อ่านได้แบบเดียวกับ API Lead (ไม่ต้อง login และอนุญาตให้เว็บอื่นเรียกได้ — CORS)</li>
+        <li>หรือ ดึงข้อมูลนี้ลง Google Sheet แล้ว Publish to web เฉพาะแท็บนั้น ส่งลิงก์มา — หน้านี้จะอ่านจากชีทแทน</li></ol>`
+      : net ? `<p>เบราว์เซอร์เรียก API การนัดหมายไม่สำเร็จ (อาจยังไม่อนุญาตให้เว็บอื่นเรียก — CORS หรือเครือข่ายบล็อก)</p>`
+      : `<p>${escHtml(DEMO_STATE.msg)}</p>`}
+      <button class="btn btn-primary" id="dm-retry">ลองดึงใหม่</button></div>`;
+    document.getElementById('dm-retry').onclick = loadDemoData;
+    return;
+  }
+  if(!DEMO_ROWS){
+    sub.textContent = 'กำลังดึงข้อมูลการนัดหมาย…';
+    body.innerHTML = `<div class="panel"><div class="spinner" style="margin:10px auto;"></div></div>`;
+    if(DEMO_STATE.state === 'idle') loadDemoData();
+    return;
+  }
+
+  const mon = document.getElementById('dm-week').value || demoMonday(demoToday());
+  const sun = demoAddDays(mon, 6), nMon = demoAddDays(mon, 7), nSun = demoAddDays(mon, 13);
+  const today = demoToday();
+  const isCurWeek = today >= mon && today <= sun;
+  const WK = isCurWeek ? 'สัปดาห์นี้' : 'สัปดาห์ที่เลือก', NX = isCurWeek ? 'สัปดาห์หน้า' : 'สัปดาห์ถัดไป';
+  const scope = document.getElementById('dm-team').value || 'mine';
+  const T = DEMO_WEEK_TARGET;
+  sub.textContent = `สัปดาห์ ${demoWeekLabel(mon)} · สัปดาห์ถัดไป ${demoWeekLabel(nMon)} · เป้า ${T} Demo/คน/สัปดาห์`
+    + (DEMO_STATE.state === 'error' ? ' · รอบล่าสุดดึงไม่สำเร็จ แสดงข้อมูลเดิม' : '');
+
+  // ---- รวมรายคน ----
+  const per = new Map();
+  const ensure = n => { let e = per.get(n); if(!e){ e = { n, t: teamOf(n), done: 0, cancel: 0, pend: 0, other: 0, online: 0, onsite: 0, visit: 0, next: 0, nextAll: 0, rep: 0, repNext: 0, rows: [] }; per.set(n, e); } return e; };
+  // ทุกคนในทีมที่ดูแลต้องอยู่ในตาราง แม้ยังไม่มีนัด
+  Object.keys(DEFAULT_TEAM_MAP).forEach(n => { if(activeTeams().includes(teamOf(n))) ensure(n); });
+  const days = Array.from({ length: 7 }, (_, i) => ({ d: demoAddDays(mon, i), done: 0, cancel: 0, pend: 0, other: 0 }));
+  const notCounted = [];
+  let noDate = 0;
+  DEMO_ROWS.forEach(r => {
+    if(!r.d){ noDate++; return; }
+    const inWk = r.d >= mon && r.d <= sun, inNext = r.d >= nMon && r.d <= nSun;
+    if(!inWk && !inNext) return;
+    const e = ensure(r.sale);
+    const counted = DEMO_COUNTED.has(r.kind);
+    e.rows.push(r);
+    if(!counted){
+      if(inWk) e.rep++; else e.repNext++;
+      notCounted.push(r);
+      return;
+    }
+    if(inWk){
+      const k = r.st === 'done' ? 'done' : r.st === 'cancel' ? 'cancel' : r.st === 'pending' ? 'pend' : 'other';
+      e[k]++;
+      if(r.st === 'done') e[r.kind]++;
+      const day = days[Math.round((Date.parse(r.d) - Date.parse(mon)) / 864e5)];
+      if(day) day[k]++;
+    } else {
+      e.nextAll++;
+      if(isCurWeek ? r.st === 'pending' : r.st !== 'cancel') e.next++;
+    }
+  });
+  const people = [...per.values()].filter(e => demoInScope(e.t, scope));
+  const overdue = people.reduce((a, e) => a + e.rows.filter(r => r.d >= mon && r.d <= sun && r.d < today && r.st === 'pending' && (DEMO_COUNTED.has(r.kind))).length, 0);
+  people.sort((a, b) => b.done - a.done || b.pend - a.pend || b.next - a.next || a.n.localeCompare(b.n, 'th'));
+  const sum = k => people.reduce((a, e) => a + e[k], 0);
+  const nP = people.length;
+  const hit = people.filter(e => e.done >= T).length;
+  const gapAll = people.reduce((a, e) => a + Math.max(0, T - e.done), 0);
+  const gapNextAll = people.reduce((a, e) => a + Math.max(0, T - e.next), 0);
+
+  // ---- 1) ตัวเลขหลัก ----
+  let html = `<div class="sd-tiles">
+    ${sdTile(`Demo สำเร็จ (${WK})`, fmtNum(sum('done')), ' ', `Online <b>${sum('online')}</b> · On Site <b>${sum('onsite')}</b> · Visit <b>${sum('visit')}</b>`, `เป้ารวม ${fmtNum(T * nP)} (${nP} คน × ${T}) · ขาดอีก ${fmtNum(gapAll)}`)}
+    ${sdTile('ถึงเป้า ' + T + ' Demo', `${hit}/${nP} คน`, ' ', nP ? `${Math.round(hit / nP * 100)}% ของทีม` : '', '')}
+    ${sdTile('ยกเลิก', fmtNum(sum('cancel')), ' ', (sum('done') + sum('cancel')) ? `${Math.round(sum('cancel') / (sum('done') + sum('cancel')) * 100)}% ของนัดที่มีผลแล้ว` : '', '')}
+    ${sdTile('รอผล (สถานะยังว่าง)', fmtNum(sum('pend')), ' ', overdue ? `<b>${overdue}</b> นัดเลยวันนัดแล้วแต่ยังไม่อัปเดตผล` : 'ยังไม่มีนัดที่เลยวันแล้วค้างอัปเดต', sum('other') ? `สถานะอื่นๆ ${sum('other')} นัด` : '')}
+    ${sdTile(`Demo ${NX} (นัดไว้แล้ว)`, fmtNum(sum('next')), ' ', `${demoWeekLabel(nMon)}`, `ยังต้องหาเพิ่มอีก ${fmtNum(gapNextAll)} เพื่อให้ทุกคนครบ ${T}`)}
+    ${sdTile('นัดที่ไม่นับ (เช่น Repeat)', fmtNum(sum('rep')), ' ', `${NX} ${sum('repNext')} นัด`, '')}
+  </div>`;
+
+  // ---- 2) ตารางรายคน ----
+  const bar = (v, cls, pend) => { const a = Math.min(100, v / T * 100), b = Math.min(100 - a, (pend || 0) / T * 100); return `<div class="dm-prog"><i class="${cls}" style="width:${a}%"></i><i class="pend" style="width:${b}%"></i></div>`; };
+  html += `<div class="panel"><div class="panel-head"><h2>ภาพรวมรายเซล</h2><span class="hint">แตะชื่อเพื่อดูรายการนัด · นับเฉพาะ Online · On Site · Visit Demo</span></div>
+    <div class="table-x"><table class="team-table dm-table"><thead>
+      <tr><th rowspan="2" style="text-align:left;">เซล</th><th rowspan="2" class="dm-team" style="text-align:left;">ทีม</th><th colspan="5" class="dm-grp">${WK} · ${demoWeekLabel(mon)}</th><th colspan="2" class="dm-grp nx">${NX}</th><th rowspan="2">ไม่นับ<br><span class="dm-th-sub">Repeat ฯลฯ</span></th></tr>
+      <tr><th>สำเร็จ</th><th>ยกเลิก</th><th>รอผล</th><th style="min-width:120px;">เทียบเป้า ${T}</th><th>ขาดอีก</th><th>นัดแล้ว</th><th>ขาดอีก</th></tr>
+    </thead><tbody>
+    ${people.map(e => {
+      const gap = Math.max(0, T - e.done), gapN = Math.max(0, T - e.next);
+      const open = DEMO_OPEN === e.n;
+      let tr = `<tr data-dm-sale="${escHtml(e.n)}" class="dm-row${open ? ' open' : ''}${e.done >= T ? ' dm-hit' : ''}">
+        <td class="dm-name" style="text-align:left;"><span class="dm-caret">${open ? '▾' : '▸'}</span> ${escHtml(e.n)}</td>
+        <td class="dm-team" style="text-align:left;"><span class="team-pill sm">${escHtml(e.t)}</span></td>
+        <td><b>${e.done}</b></td><td>${e.cancel || '–'}</td><td>${e.pend || '–'}${e.other ? ` <span class="dm-th-sub">+${e.other} อื่นๆ</span>` : ''}</td>
+        <td>${bar(e.done, e.done >= T ? 'ok' : '', e.pend)}</td>
+        <td>${gap ? `<span class="dm-gap">${gap}</span>` : '<span class="dm-ok">ถึงเป้า ✓</span>'}</td>
+        <td><b>${e.next}</b></td><td>${gapN ? `<span class="dm-gap">${gapN}</span>` : '<span class="dm-ok">✓</span>'}</td>
+        <td>${(e.rep + e.repNext) || '–'}</td></tr>`;
+      if(open){
+        const rows = e.rows.slice().sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+        tr += `<tr class="dm-detail"><td colspan="10">${rows.length ? demoListHtml(rows, mon, sun, false, NX) : '<span class="dm-th-sub">ไม่มีนัดใน${WK}และ${NX}</span>'}</td></tr>`;
+      }
+      return tr;
+    }).join('')}
+    <tr class="dm-total"><td style="text-align:left;"><b>รวม ${nP} คน</b></td><td class="dm-team"></td><td><b>${sum('done')}</b></td><td>${sum('cancel')}</td><td>${sum('pend')}</td><td>${bar(nP ? sum('done') / nP : 0, '', nP ? sum('pend') / nP : 0)}</td><td><b>${gapAll}</b></td><td><b>${sum('next')}</b></td><td><b>${gapNextAll}</b></td><td>${sum('rep') + sum('repNext')}</td></tr>
+    </tbody></table></div>
+    <div class="dm-legend"><span><b>สำเร็จ</b> = สถานะ "ดำเนินการตามนัดหมาย" (นับเข้าเป้า)</span><span><b>รอผล</b> = นัดในสัปดาห์ที่ช่องสถานะยังว่าง (แถบสีอ่อน = ถ้ารอผลสำเร็จทั้งหมด)</span><span><b>${NX} · นัดแล้ว</b> = ${isCurWeek ? 'นัดที่ยังไม่ได้ดำเนินการ (สถานะว่าง)' : 'นัดที่ไม่ถูกยกเลิก'}</span><span><b>ขาดอีก</b> = ${T} − จำนวน</span></div>
+  </div>`;
+
+  // ---- 3) รายวันในสัปดาห์ ----
+  const maxDay = Math.max(1, ...days.map(x => x.done + x.cancel + x.pend + x.other));
+  html += `<div class="sd-grid2"><div class="panel"><div class="panel-head"><h2>Demo รายวัน (จ.–อา.)</h2><span class="hint">ทีมที่เลือก · นับเฉพาะ Online · On Site · Visit Demo</span></div>
+    <div class="sd-legend"><span><i style="background:var(--success)"></i>สำเร็จ</span><span><i style="background:var(--danger)"></i>ยกเลิก</span><span><i style="background:#C9C9C0"></i>ยังไม่อัปเดต / อื่นๆ</span></div>
+    <div class="dm-days">${days.map((x, i) => {
+      const scale = v => (v / maxDay * 100) + '%';
+      const tot = x.done + x.cancel + x.pend + x.other;
+      return `<div class="dm-day${x.d === today ? ' today' : ''}"><div class="dm-day-n">${tot || ''}</div><div class="dm-col">
+        <i style="height:${scale(x.pend + x.other)};background:#C9C9C0"></i><i style="height:${scale(x.cancel)};background:var(--danger)"></i><i style="height:${scale(x.done)};background:var(--success)"></i></div>
+        <div class="dm-day-l">${DEMO_TH_DOW[i]}<br>${+x.d.slice(8)}</div></div>`;
+    }).join('')}</div></div>`;
+
+  // ---- 4) นัดที่ไม่นับ ----
+  const ncScope = notCounted.filter(r => demoInScope(teamOf(r.sale), scope)).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const byType = {};
+  ncScope.forEach(r => { byType[r.type] = (byType[r.type] || 0) + 1; });
+  html += `<div class="panel"><div class="panel-head"><h2>นัดที่ไม่นับเป็น Demo</h2><span class="hint">${WK} + ${NX} · ${ncScope.length} นัด</span></div>
+    ${Object.keys(byType).length ? `<div class="dm-chips">${Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span class="team-chip">${escHtml(t)} <b>${n}</b></span>`).join('')}</div>` : ''}
+    ${ncScope.length ? `<div class="dm-scroll">${demoListHtml(ncScope, mon, sun, true, NX)}</div>` : '<div class="dm-th-sub">ไม่มี</div>'}
+  </div></div>`;
+
+  // ---- ตรวจข้อมูล ----
+  const cols = DEMO_STATE.cols || {};
+  const missing = [['sale', 'Sale ที่ดูแล'], ['date', 'วันที่นัดหมาย'], ['type', 'ประเภทการนัดหมาย'], ['status', 'สถานะการนัดหมาย']].filter(([k]) => !cols[k]).map(([, l]) => l);
+  const unknownTypes = [...new Set(DEMO_ROWS.filter(r => r.kind === 'other').map(r => r.type))];
+  const otherStatus = [...new Set(DEMO_ROWS.filter(r => r.st === 'other').map(r => r.status))];
+  const notes = [];
+  if(missing.length) notes.push(`ไม่พบคอลัมน์: <b>${missing.map(escHtml).join(', ')}</b>`);
+  if(noDate) notes.push(`${fmtNum(noDate)} นัดไม่มีวันที่นัดหมาย (ไม่ถูกนับ)`);
+  if(unknownTypes.length) notes.push(`ประเภทอื่นในจุดประสงค์ Demo (ไม่นับ): ${unknownTypes.slice(0, 8).map(t => `<b>${escHtml(t)}</b>`).join(', ')}`);
+  if(otherStatus.length) notes.push(`สถานะที่ไม่ใช่ ดำเนินการตามนัดหมาย / ยกเลิก / ว่าง (แสดงเป็น "อื่นๆ"): ${otherStatus.slice(0, 8).map(t => `<b>${escHtml(t)}</b>`).join(', ')}`);
+  const guessed = DEMO_ROWS.filter(r => r.saleGuess).length;
+  if(guessed) notes.push(`${guessed} นัดช่อง Sale ที่ดูแลว่าง — ใช้ชื่อผู้เข้าร่วมคนแรกแทน`);
+  html += `<div class="dm-foot">นัดจุดประสงค์ Demo ${fmtNum(DEMO_ROWS.length)} รายการ${DEMO_STATE.total ? ` (จากนัดทุกประเภท ${fmtNum(DEMO_STATE.total)})` : ''} · จาก${DEMO_STATE.src === 'sheet' ? 'ชีทการนัดหมาย' : ' API การนัดหมาย'}${notes.length ? '<br>' + notes.join('<br>') : ''}</div>`;
+  body.innerHTML = html;
+}
+function demoListHtml(rows, mon, sun, showSale, nxName){
+  const stLabel = r => r.st === 'done' ? `<span class="dm-st done">${escHtml(r.status)}</span>` : r.st === 'cancel' ? `<span class="dm-st cancel">${escHtml(r.status)}</span>` : r.st === 'pending' ? '<span class="dm-st pend">ยังไม่ดำเนินการ</span>' : `<span class="dm-st">${escHtml(r.status)}</span>`;
+  return `<table class="dm-list"><tbody>${rows.map(r => {
+    const dow = DEMO_TH_DOW[(new Date(r.d + 'T00:00:00Z').getUTCDay() + 6) % 7];
+    const wk = r.d >= mon && r.d <= sun ? '' : ` <span class="dm-th-sub">(${nxName || 'สัปดาห์หน้า'})</span>`;
+    const counted = DEMO_COUNTED.has(r.kind);
+    return `<tr><td>${dow} ${demoDM(r.d)}${wk}</td>${showSale ? `<td>${escHtml(r.sale)}</td>` : ''}<td>${escHtml(r.type)}${counted ? '' : ' <span class="dm-th-sub">· ไม่นับ</span>'}</td><td>${stLabel(r)}${!showSale && r.res && r.res !== '-' ? ` <span class="dm-th-sub dm-res" title="${escHtml(r.res)}">${escHtml(r.res.length > 50 ? r.res.slice(0, 50) + '…' : r.res)}</span>` : ''}</td>${showSale ? '' : `<td class="dm-ref">${escHtml(r.lid || '')}${r.lid && r.shop ? ' · ' : ''}${escHtml(r.shop || '')}</td>`}</tr>`;
+  }).join('')}</tbody></table>`;
+}
+
 async function loadData(){
   if(LOADING) return;
   LOADING = true;
@@ -3211,6 +3595,7 @@ async function loadData(){
   let errMsg = '';
   // ดึงยอดขาย (RT / RT Detail / MSTR) พร้อมกับ Lead
   const leadPromise = fetchLeadRows().then(rows => ({ rows }), err => ({ err }));
+  loadDemoData();   // การนัดหมาย/Demo — โหลดแยก ไม่ทำให้หน้าอื่นรอ
   if(SALES_SHEETS.rt && SALES_SHEETS.rtd){
     try{
       const raw = await fetchSalesSheets();
