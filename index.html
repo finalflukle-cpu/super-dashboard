@@ -574,6 +574,17 @@
   @media (max-width:640px){ .dm-days{height:170px;gap:4px;} .dm-col{height:110px;} .dm-table .dm-team{display:none;} .dm-table td.dm-name{white-space:normal;min-width:110px;max-width:130px;} .dm-table td, .dm-table th{padding-left:6px;padding-right:6px;} .dm-prog{min-width:60px;} .dm-detail td{max-width:90vw;} }
   /* ---- การโทร ---- */
   .dm-list td.dm-ref{min-width:140px;}
+  .cl-leads{display:flex;flex-direction:column;}
+  .cl-lead{padding:8px 4px;border-bottom:1px solid #F0F0EB;}
+  .cl-lead-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;}
+  .cl-ph{font-variant-numeric:tabular-nums;color:var(--text-primary);} .cl-ph.sale{color:var(--text-secondary);}
+  .cl-calls{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .cl-chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;white-space:nowrap;border:1px solid transparent;}
+  .cl-chip.long{background:#E3F4EA;color:#1F6B40;border-color:#BFE3CD;} .cl-chip.short{background:#FDF0D5;color:#8A5A00;border-color:#F3D9A4;}
+  .cl-chip.in{border-style:dashed;}
+  .cl-legend{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 6px 0;}
+  .dm-detail .cl-lead-head, .dm-detail .cl-calls{white-space:normal;}
+  @media (max-width:640px){ .dm-detail .cl-leads, .dm-detail .cl-legend{max-width:calc(100vw - 72px);position:sticky;left:6px;} }
   .cl-bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:#F0F0EB;min-width:120px;}
   .cl-bar i{display:block;height:100%;} .cl-bar .c0{background:#D64545;} .cl-bar .c1{background:#F2C94C;} .cl-bar .c2{background:#7FB77E;} .cl-bar .c3{background:#2F7D4F;}
 </style>
@@ -3819,7 +3830,8 @@ function renderCalls(){
     const inc = cs.length - out.length;
     const first = out[0];
     const lag = first ? Math.round((Date.parse(first.d) - Date.parse(l.d)) / 864e5) : null;
-    return Object.assign({}, l, { n: out.length, inc, talk: out.reduce((a, c) => a + c.dur, 0), lag, first, callers: [...new Set(out.map(c => c.local))], noPhone: !l.p1 && !l.p2, early: cover && l.d < cover });
+    const all = cs.slice().sort((a, b) => (a.d + a.t) < (b.d + b.t) ? -1 : 1);
+    return Object.assign({}, l, { all, long: out.filter(c => c.dur > CALL_LONG_SEC).length, n: out.length, inc, talk: out.reduce((a, c) => a + c.dur, 0), lag, first, callers: [...new Set(out.map(c => c.local))], noPhone: !l.p1 && !l.p2, early: cover && l.d < cover });
   });
   const withPh = leads.filter(l => !l.noPhone);
   const called = withPh.filter(l => l.n > 0), never = withPh.filter(l => l.n === 0);
@@ -3851,11 +3863,11 @@ function renderCalls(){
     <div class="table-x"><table class="team-table dm-table"><thead><tr><th style="text-align:left;">เซล</th><th class="dm-team" style="text-align:left;">ทีม</th><th>Lead</th><th>โทรแล้ว</th><th>ยังไม่โทร</th><th style="min-width:140px;">จำนวนครั้งที่โทร</th><th>เฉลี่ย/Lead</th><th>เวลาคุยรวม</th></tr></thead><tbody>
     ${ppl.map(e => {
       const open = CALL_OPEN === e.n;
-      let tr = `<tr data-cl-sale="${escHtml(e.n)}" class="dm-row${open ? ' open' : ''}"><td class="dm-name" style="text-align:left;"><span class="dm-caret">${open ? '▾' : '▸'}</span> ${escHtml(e.n)}</td>
+      let tr = `<tr data-cl-sale="${escHtml(e.n)}" class="dm-row${open ? ' open' : ''}"><td class="dm-name" style="text-align:left;"><span class="dm-caret">${open ? '▾' : '▸'}</span> ${escHtml(e.n)}${salePhoneOf(e.n) ? `<div class="dm-th-sub">☎ ${fmtPhoneTH(salePhoneOf(e.n))}</div>` : ''}</td>
         <td class="dm-team" style="text-align:left;">${e.t ? `<span class="team-pill sm ${teamBadgeClass(e.t)}">${escHtml(e.t)}</span>` : ''}</td>
         <td>${e.leads}</td><td>${e.called} <span class="dm-th-sub">${pct(e.called, e.leads)}</span></td><td>${e.never ? `<span class="dm-gap">${e.never}</span>` : '<span class="dm-ok">0</span>'}</td>
         <td>${bar(e)}</td><td>${(e.calls / e.leads).toFixed(1)}</td><td>${Math.round(e.talk / 60)} นาที</td></tr>`;
-      if(open) tr += `<tr class="dm-detail"><td colspan="8">${callLeadList(e.list)}</td></tr>`;
+      if(open) tr += `<tr class="dm-detail"><td colspan="8"><div class="cl-legend"><span class="cl-chip long">คุยเกิน ${CALL_LONG_SEC} วิ</span><span class="cl-chip short">${CALL_LONG_SEC} วิหรือน้อยกว่า (ไม่รับ / วางสายเร็ว)</span><span class="cl-chip long in">↙ ลูกค้าโทรเข้า</span></div>${callLeadList(e.list)}</td></tr>`;
       return tr;
     }).join('')}
     <tr class="dm-total"><td style="text-align:left;"><b>รวม</b></td><td class="dm-team"></td><td><b>${withPh.length}</b></td><td><b>${called.length}</b> <span class="dm-th-sub">${pct(called.length, withPh.length)}</span></td><td><b>${never.length}</b></td><td></td><td>${avg.toFixed(1)}</td><td>${Math.round(withPh.reduce((a, l) => a + l.talk, 0) / 60)} นาที</td></tr>
@@ -3877,12 +3889,45 @@ function renderCalls(){
   html += `<div class="dm-foot">ข้อมูลการโทร ${fmtNum(CALL_ROWS.length)} สาย (${fmtThaiDate(CALL_STATE.minD)} – ${fmtThaiDate(CALL_STATE.maxD)}) · จับคู่ด้วยเบอร์โทร/เบอร์สำรองของ Lead · นับเฉพาะสายโทรออกที่เกิดตั้งแต่วันที่ลูกค้าติดต่อมาครั้งแรก (สายที่ลูกค้าโทรเข้าแสดงแยก) · เบอร์เซล ${SALES_PHONES.size} เบอร์</div>`;
   body.innerHTML = html;
 }
+function fmtPhoneTH(p){
+  const d = String(p || '');
+  if(/^0[689]\d{8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+  if(/^02\d{7}$/.test(d)) return '02-' + d.slice(2, 5) + '-' + d.slice(5);
+  if(/^0\d{8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, 5) + '-' + d.slice(5);
+  return d;
+}
+function fmtDurTH(s){ s = Math.round(s || 0); return s >= 60 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' นาที' : s + ' วิ'; }
+const CALL_LONG_SEC = 20;   // คุยเกิน 20 วินาที = นับว่าได้คุยจริง
+// เบอร์ประจำตัวเซล (จากชีทเบอร์เซล)
+function salePhoneOf(name){
+  if(!name) return '';
+  for(const [ph, v] of SALES_PHONES) if(v.name === name) return ph;
+  return '';
+}
+function callChip(c){
+  const long = c.dur > CALL_LONG_SEC;
+  const [y, m, d] = c.d.split('-').map(Number);
+  return `<span class="cl-chip ${long ? 'long' : 'short'}${c.dir === 'I' ? ' in' : ''}" title="${c.dir === 'I' ? 'ลูกค้าโทรเข้า' : 'โทรออก'} · ${escHtml(callerLabel(c.local))} (${fmtPhoneTH(c.local)})">${c.dir === 'I' ? '↙ ' : ''}${d} ${DEMO_TH_MON[m - 1]} ${escHtml(c.t)} · <b>${fmtDurTH(c.dur)}</b></span>`;
+}
 function callLeadList(list, showSale){
   const rows = list.slice().sort((a, b) => a.n - b.n || (a.d < b.d ? 1 : -1)).slice(0, 300);
-  return `<table class="dm-list"><tbody>${rows.map(l => `<tr>
-    <td>${escHtml(l.lid)}</td><td>${fmtThaiDate(l.d)}</td>${showSale ? `<td>${escHtml(l.sale || '(ยังไม่มีเซล)')}</td>` : ''}
-    <td>${l.n ? `<span class="dm-st done">โทร ${l.n} ครั้ง</span>` : '<span class="dm-st cancel">ยังไม่เคยโทร</span>'}${l.inc ? ` <span class="dm-th-sub">ลูกค้าโทรเข้า ${l.inc}</span>` : ''}</td>
-    <td class="dm-ref">${l.first ? `ครั้งแรก ${fmtThaiDate(l.first.d)}${l.lag ? ` (หลัง ${l.lag} วัน)` : ' (วันเดียวกัน)'} · ${escHtml(l.callers.map(callerLabel).join(', '))}` : escHtml(l.st || '')}</td></tr>`).join('')}</tbody></table>${list.length > 300 ? `<div class="dm-th-sub">แสดง 300 จาก ${list.length}</div>` : ''}`;
+  return `<div class="cl-leads">${rows.map(l => {
+    const sp = salePhoneOf(l.sale);
+    const phones = [l.p1, l.p2].filter(Boolean).map(fmtPhoneTH).join(' / ');
+    const calls = (l.all || []).slice(0, 30);
+    return `<div class="cl-lead">
+      <div class="cl-lead-head">
+        <b>${escHtml(l.lid)}</b><span>${fmtThaiDate(l.d)}</span>
+        <span class="cl-ph" title="เบอร์ Lead">☎ ${escHtml(phones || 'ไม่มีเบอร์')}</span>
+        ${showSale ? `<span>${escHtml(l.sale || '(ยังไม่มีเซล)')}</span>` : ''}
+        ${sp ? `<span class="cl-ph sale" title="เบอร์เซลที่ดูแล">เบอร์เซล ${escHtml(fmtPhoneTH(sp))}</span>` : ''}
+        ${l.n ? `<span class="dm-st done">โทร ${l.n} ครั้ง</span><span class="dm-th-sub">คุยเกิน ${CALL_LONG_SEC} วิ ${l.long}/${l.n} สาย</span>` : '<span class="dm-st cancel">ยังไม่เคยโทร</span>'}
+        ${l.inc ? `<span class="dm-th-sub">ลูกค้าโทรเข้า ${l.inc}</span>` : ''}
+        ${l.st ? `<span class="dm-th-sub">· ${escHtml(l.st)}</span>` : ''}
+      </div>
+      ${calls.length ? `<div class="cl-calls">${calls.map(callChip).join('')}${(l.all || []).length > 30 ? `<span class="dm-th-sub">+${l.all.length - 30} สาย</span>` : ''}</div>` : ''}
+    </div>`;
+  }).join('')}</div>${list.length > 300 ? `<div class="dm-th-sub">แสดง 300 จาก ${list.length}</div>` : ''}`;
 }
 
 async function loadData(){
