@@ -3194,7 +3194,7 @@ function dqSection(title, rows, cols, render, okText, help){
 function dataIssueCount(){
   if(!DATA_ISSUES) return 0;
   return DATA_ISSUES.noLid.length + DATA_ISSUES.lidNotFound.length + (DATA_ISSUES.suspectLicense || []).length + DATA_ISSUES.unknownTags.size + (DATA_ISSUES.saleMismatch || []).length
-    + DATA_ISSUES.unknownProducts.length + teamMismatches().length;
+    + DATA_ISSUES.unknownProducts.length + teamMismatches().length + demoStaleLeads().length;
 }
 function teamMismatches(){
   const mstr = DATA_ISSUES && DATA_ISSUES.mstr;
@@ -3227,6 +3227,19 @@ function renderDataCheck(){
         SALES_LIVE && SALES_LIVE.mstr.people.length ? `${SALES_LIVE.mstr.people.length} เซล · ${SALES_LIVE.mstr.products.size} สินค้า` : (SALES_SHEETS.mstr ? 'โหลดไม่ได้' : 'ยังไม่ได้ใส่ลิงก์'))}
     ${src('ผูกยอดขายกับ Lead', null, RT_CUTOVER ? `ตั้งแต่ ${fmtD(RT_CUTOVER)} ใช้ RT สด · ก่อนหน้าใช้ COMM เดิม` : `ใช้ RT ทุกช่วงเวลา · ตรวจการใส่ LID ตั้งแต่ ${fmtD(LID_REQUIRED_FROM)}`)}
   </div></div>`;
+  if(DEMO_STATE.state === 'idle') loadDemoData();
+  const stale = demoStaleLeads();
+  if(!DEMO_ROWS) html += `<div class="panel"><div class="panel-head"><h2>Lead สถานะ Demo ที่เลยวันนัด (ลืมปรับสถานะ)</h2></div><div class="dq-how">${DEMO_STATE.state === 'error' ? 'โหลดชีทการนัดหมายไม่ได้ — ' + escHtml(DEMO_STATE.msg) : 'กำลังโหลดชีทการนัดหมาย…'}</div></div>`;
+  else {
+    html += dqSection(`Lead สถานะ Online / Onsite Demo ที่เลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน (ลืมปรับสถานะ)`, stale, ['LID', 'เซลที่ดูแล', 'สถานะการขาย', 'นัด Demo ล่าสุด', 'ผลนัด', 'เลยมา', 'ร้าน'],
+      r => `<tr><td>${escHtml(r.lid)}</td><td>${escHtml(r.sale || '(ยังไม่มีเซล)')}</td><td>${escHtml(r.st)}</td><td>${fmtD(r.dc.appt.d)} <span class="dq-how">${escHtml(r.dc.appt.type)}</span></td><td>${escHtml(r.dc.appt.status || 'ยังไม่ระบุ')}</td><td><b>${r.dc.gap} วัน</b></td><td style="text-align:left;">${escHtml(r.shop || '–')}</td></tr>`,
+      `ทุก Lead ที่เป็นสถานะ Online / Onsite Demo ยังไม่เลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน`,
+      `เทียบสถานะการขายใน API Lead กับวันนัด Demo ล่าสุดในชีทการนัดหมาย (จับคู่ด้วย LID) · ถ้าเลยวันนัดมาเกิน ${PIPE_DEMO_GRACE} วัน หรือนัดถูกยกเลิกแล้ว แต่สถานะยังเป็น Online / Onsite Demo ถือว่าลืมปรับสถานะ · แก้: ให้เซลเข้าไปปรับสถานะการขายของ Lead ให้ตรงกับผลจริง (เช่น Pending, Follow AT Sale, Follow Demo Sales หรือ Not interested)`);
+    const noAppt = demoNoApptLeads();
+    if(noAppt.length) html += dqSection('Lead สถานะ Online / Onsite Demo ที่ไม่พบนัด Demo ในชีท', noAppt, ['LID', 'เซลที่ดูแล', 'สถานะการขาย', 'ปรับสถานะเมื่อ', 'ร้าน'],
+      r => `<tr><td>${escHtml(r.lid)}</td><td>${escHtml(r.sale || '(ยังไม่มีเซล)')}</td><td>${escHtml(r.st)}</td><td>${fmtD(r.su)}</td><td style="text-align:left;">${escHtml(r.shop || '–')}</td></tr>`,
+      '', 'ข้อมูลประกอบ (ไม่นับในป้ายตัวเลข) · เฉพาะ Lead ที่ปรับสถานะตั้งแต่ 1 ม.ค. 2026 · อาจลืมสร้างนัดในระบบ หรือ LID ในนัดหมายไม่ตรง');
+  }
   html += dqSection('สินค้าที่น่าจะเป็น License แต่ช่อง Goods Cat ไม่ใช่ Software', I.suspectLicense || [], ['รหัสสินค้า', 'ชื่อสินค้า', 'Goods Cat ตอนนี้', 'จำนวน (ไม่ถูกนับ)', 'ช่วงวันที่'],
     r => `<tr><td>${escHtml(r.code)}</td><td style="text-align:left;">${escHtml(r.name)}</td><td>${escHtml(r.gc)}</td><td>${fmtQty(r.qty)}</td><td>${fmtD(r.first)} – ${fmtD(r.last)}</td></tr>`,
     'สินค้า Software ทุกตัวมี Goods Cat = Software แล้ว',
@@ -3413,6 +3426,9 @@ async function loadDemoData(){
     DEMO_STATE = { state: 'error', msg: e.message || String(e), cols: DEMO_STATE.cols, src: DEMO_STATE.src };
   }
   if(CURRENT_PAGE === 'demo') renderDemo();
+  if(CURRENT_PAGE === 'pipeline') renderPipeline();
+  if(CURRENT_PAGE === 'data-check') renderDataCheck();
+  if(typeof updateDataCheckBadge === 'function' && DATA_READY) updateDataCheckBadge();
 }
 
 // ---- สัปดาห์ (จันทร์–อาทิตย์ ตามเวลาไทย) ----
@@ -3962,6 +3978,7 @@ async function loadData(){
     overlay.style.display = 'none';
     setDataStatus(DATA_MODE === 'live' ? 'ok' : 'fallback', errMsg);
     updateDataCheckBadge();
+    if(DEMO_STATE.state === 'idle') loadDemoData();
     switchPage(CURRENT_PAGE);
     loadCallData();   // ข้อมูลการโทร — ต้องรอทีม/MSTR ก่อน จึงโหลดหลังข้อมูลหลัก
   }catch(err){
@@ -4024,6 +4041,51 @@ function pipeKey(s){ const k = String(s || '').toLowerCase().replace(/[^a-z]/g, 
 function pipeExcluded(st){ return PIPE_EXCLUDE.has(pipeKey(st)); }
 const PIPE_NOSALE = '(ยังไม่มีเซลดูแล)';
 
+// ---- ตรวจ Lead สถานะ Online / Onsite Demo กับวันนัด Demo จริง (ชีทการนัดหมาย) ----
+// เลยวันนัด Demo ล่าสุดเกิน 3 วันแล้วยังเป็นสถานะ Demo = ลืมปรับสถานะ (ผู้ใช้กำหนด 16 ต.ค. 2026)
+const PIPE_DEMO_GRACE = 3;
+const PIPE_DEMO_KEYS = new Set(['onlinedemo', 'onsitedemo']);
+let PIPE_DEMO_IDX = null, PIPE_DEMO_IDX_SRC = null;
+function pipeLidKey(v){ return String(v || '').toUpperCase().replace(/\s+/g, ''); }
+function pipeDemoIndex(){
+  if(!DEMO_ROWS) return null;
+  if(PIPE_DEMO_IDX_SRC === DEMO_ROWS) return PIPE_DEMO_IDX;
+  const m = new Map();
+  DEMO_ROWS.forEach(r => { if(!r.lid || !r.d) return; const k = pipeLidKey(r.lid); (m.get(k) || m.set(k, []).get(k)).push(r); });
+  PIPE_DEMO_IDX = m; PIPE_DEMO_IDX_SRC = DEMO_ROWS;
+  return m;
+}
+// คืนค่า { flag: 'late' | 'cancel' | 'none' | 'ok' | 'wait', appt, gap }
+function pipeDemoCheck(lid, today){
+  const idx = pipeDemoIndex(); if(!idx) return { flag: 'wait' };
+  const appts = idx.get(pipeLidKey(lid)) || [];
+  if(!appts.length) return { flag: 'none' };
+  const live = appts.filter(a => a.st !== 'cancel').sort((a, b) => a.d < b.d ? 1 : -1);
+  const gapOf = d => Math.round((Date.parse(today) - Date.parse(d)) / 864e5);
+  if(live.length){ const a = live[0], gap = gapOf(a.d); return { flag: gap > PIPE_DEMO_GRACE ? 'late' : 'ok', appt: a, gap }; }
+  const c = appts.slice().sort((a, b) => a.d < b.d ? 1 : -1)[0], gap = gapOf(c.d);
+  return { flag: gap > PIPE_DEMO_GRACE ? 'cancel' : 'ok', appt: c, gap };
+}
+// Lead สถานะ Demo ที่ลืมปรับ (ใช้ในหน้าตรวจข้อมูล + ป้ายจำนวน)
+function demoStaleLeads(){
+  if(!DEMO_ROWS || !PIPE_LEADS.length) return [];
+  const today = demoToday();
+  return PIPE_LEADS.filter(l => PIPE_DEMO_KEYS.has(pipeKey(l.st))).map(l => Object.assign({}, l, { dc: pipeDemoCheck(l.lid, today) }))
+    .filter(l => l.dc.flag === 'late' || l.dc.flag === 'cancel')
+    .sort((a, b) => (a.sale || '~').localeCompare(b.sale || '~', 'th') || b.dc.gap - a.dc.gap);
+}
+function demoNoApptLeads(){
+  if(!DEMO_ROWS || !PIPE_LEADS.length) return [];
+  const today = demoToday();
+  return PIPE_LEADS.filter(l => PIPE_DEMO_KEYS.has(pipeKey(l.st)) && l.su >= '2026-01-01' && pipeDemoCheck(l.lid, today).flag === 'none')
+    .sort((a, b) => (a.sale || '~').localeCompare(b.sale || '~', 'th') || (a.su < b.su ? -1 : 1));
+}
+function pipeOverText(l){
+  if(!l.over) return '';
+  if(l.dc) return l.dc.flag === 'cancel' ? `นัดถูกยกเลิก (${fmtThaiDate(l.dc.appt.d)}) แต่ยังเป็นสถานะ Demo` : `เลยวันนัด ${l.dc.gap} วัน (นัด ${fmtThaiDate(l.dc.appt.d)})`;
+  return `ค้าง ${l.days} วัน (เกิน ${l.stage.limit} วัน)`;
+}
+
 function initPipeline(){
   if(PIPE_INIT) return; PIPE_INIT = true;
   ['pl-team', 'pl-since'].forEach(id => document.getElementById(id).addEventListener('change', renderPipeline));
@@ -4074,6 +4136,7 @@ function renderPipeline(){
     body.innerHTML = `<div class="panel dm-blocked"><h2>ยังไม่มีข้อมูล Lead</h2><p>ดึงข้อมูลจาก API Lead ไม่สำเร็จ — กด "รีเฟรชข้อมูล" ด้านบน</p></div>`;
     return;
   }
+  if(typeof DEMO_STATE !== 'undefined' && DEMO_STATE.state === 'idle') loadDemoData();
   const today = demoToday();
   const scope = document.getElementById('pl-team').value || '__people';
   const since = document.getElementById('pl-since').value || 'all';
@@ -4091,7 +4154,9 @@ function renderPipeline(){
   const leads = PIPE_LEADS.filter(l => inScope(l.sale) && (!fromD || (l.d && l.d >= fromD))).map(l => {
     const stage = PIPE_STAGE_BY_KEY.get(pipeKey(l.st)) || null;
     const days = pipeDays(l.su, today);
-    return Object.assign({}, l, { stage, days, over: !!(stage && stage.limit && days !== null && days > stage.limit), stLabel: l.st.trim() || '(ไม่มีสถานะ)' });
+    const dc = stage && PIPE_DEMO_KEYS.has(stage.key) ? pipeDemoCheck(l.lid, today) : null;
+    const over = dc ? (dc.flag === 'late' || dc.flag === 'cancel') : !!(stage && stage.limit && days !== null && days > stage.limit);
+    return Object.assign({}, l, { stage, days, dc, over, stLabel: l.st.trim() || '(ไม่มีสถานะ)' });
   });
   const scopeLabel = document.getElementById('pl-team').selectedOptions[0]?.textContent || '';
   sub.textContent = `${scopeLabel} · Lead ${since === 'all' ? 'ทุกช่วง' : 'ที่ติดต่อมาครั้งแรกตั้งแต่ ' + fmtThaiDate(fromD)} · สถานะล่าสุดจาก API Lead (ไม่รวม Success / Refund)`;
@@ -4110,28 +4175,30 @@ function renderPipeline(){
   const s4 = all.by.onlinedemo + all.by.onsitedemo;
   let html = `<div class="sd-tiles sd-tiles3">
     ${sdTile('Lead ในมือ', fmtNum(all.total), ' ', `ไม่รวม Success / Refund · ${fmtNum(per.size)} คน`, '')}
-    ${sdTile('อยู่ใน Pipeline (ขั้น 1–6)', fmtNum(all.pipe), ' ', `${pct(all.pipe, all.total)} ของ Lead ในมือ`, all.over ? `<span class="dm-gap">${fmtNum(all.over)}</span> รายค้างเกินกำหนด (ควรถูกย้ายสถานะอัตโนมัติแล้ว)` : '')}
+    ${sdTile('อยู่ใน Pipeline (ขั้น 1–6)', fmtNum(all.pipe), ' ', `${pct(all.pipe, all.total)} ของ Lead ในมือ`, all.over ? `<span class="dm-gap">${fmtNum(all.over)}</span> รายค้างเกินกำหนด / ลืมปรับสถานะ` : '')}
     ${sdTile('หลุดจาก Pipeline', fmtNum(all.drop), ' ', `${pct(all.drop, all.total)} ของ Lead ในมือ`, topDrop.slice(0, 3).map(([k, v]) => `${escHtml(k)} ${fmtNum(v)}`).join(' · '))}
   </div>
   <div class="sd-tiles sd-tiles3">
     ${sdTile('กำลังติดตาม (ขั้น 1–3)', fmtNum(all.step[1] + all.step[2] + all.step[3]), ' ', `New Lead ${fmtNum(all.step[1])} · ติดตามใหม่ ${fmtNum(all.step[2])} · ติดตามนำเสนอ ${fmtNum(all.step[3])}`, '')}
-    ${sdTile('นัดนำเสนอแล้ว (ขั้น 4)', fmtNum(s4), ' ', `Online Demo ${fmtNum(all.by.onlinedemo)} · Onsite Demo ${fmtNum(all.by.onsitedemo)}`, '')}
+    ${sdTile('นัดนำเสนอแล้ว (ขั้น 4)', fmtNum(s4), ' ', `Online Demo ${fmtNum(all.by.onlinedemo)} · Onsite Demo ${fmtNum(all.by.onsitedemo)}`,
+      !DEMO_ROWS ? (DEMO_STATE.state === 'error' ? 'โหลดชีทนัด Demo ไม่ได้ — ยังตรวจวันนัดไม่ได้' : 'กำลังตรวจกับวันนัด Demo…')
+      : (() => { const n = leads.filter(l => l.over && l.dc).length; return n ? `<span class="dm-gap">${fmtNum(n)}</span> รายเลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน (ลืมปรับสถานะ)` : `ไม่มีรายที่เลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน`; })())}
     ${sdTile('รอปิดการขาย (ขั้น 5–6)', fmtNum(all.close), ' ', `Pending ${fmtNum(all.by.pending)} · Follow AT Sale ${fmtNum(all.by.followatsale)}`, 'Demo เสร็จแล้ว — ออกใบเสนอราคา / ติดตามยอด')}
   </div>`;
 
   // ---- Pipeline ตามขั้น (ทั้ง scope) + Lead ค้างเกินกำหนด ----
   const maxN = Math.max(1, ...PIPE_STAGES.map(s => all.by[s.key]), all.drop);
   const hrow = (label, sublabel, n, color) => `<div class="pl-hrow"><div class="pl-hl">${label}${sublabel ? `<span class="dm-th-sub"> ${sublabel}</span>` : ''}</div><div class="pl-htrack"><i style="width:${(n / maxN * 100).toFixed(2)}%;background:${color}"></i></div><div class="pl-hn">${fmtNum(n)}</div></div>`;
-  const overList = leads.filter(l => l.over).sort((a, b) => b.days - a.days);
+  const overList = leads.filter(l => l.over).sort((a, b) => (b.dc ? b.dc.gap : b.days) - (a.dc ? a.dc.gap : a.days));
   html += `<div class="sd-grid2"><div class="panel"><div class="panel-head"><h2>Pipeline ตามขั้น</h2><span class="hint">จำนวน Lead ในแต่ละสถานะการขาย</span></div>
       ${PIPE_STAGES.map(s => { const st = PIPE_STEPS[s.step - 1]; return hrow(`<b>${s.step}</b> ${escHtml(s.name)}`, st.th, all.by[s.key], st.color); }).join('')}
       <div class="pl-sep"></div>
       ${hrow('หลุดจาก Pipeline', 'สถานะอื่น', all.drop, PIPE_DROP_COLOR)}
       ${topDrop.length ? `<div class="pl-drops">${topDrop.map(([k, v]) => `<span class="dm-st">${escHtml(k)} <b>${fmtNum(v)}</b></span>`).join('')}</div>` : ''}
     </div>
-    <div class="panel"><div class="panel-head"><h2>ค้างในขั้นเกินกำหนด</h2><span class="hint">Pending เกิน 15 วัน · Follow AT Sale เกิน 30 วัน (นับจากวันที่ปรับสถานะการขาย)</span></div>
-      ${overList.length ? `<div class="dm-scroll" style="max-height:420px;"><table class="dm-list"><thead><tr><td><b>LID</b></td><td><b>สถานะ</b></td><td><b>ค้างมา</b></td><td><b>เซล</b></td><td><b>ร้าน</b></td></tr></thead><tbody>
-        ${overList.slice(0, 300).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td>${escHtml(l.stage.name)}</td><td><span class="dm-gap">${l.days} วัน</span></td><td>${escHtml(l.sale || '–')}</td><td class="dm-ref">${escHtml(l.shop || '–')}</td></tr>`).join('')}
+    <div class="panel"><div class="panel-head"><h2>ค้างเกินกำหนด / ลืมปรับสถานะ</h2><span class="hint">Online / Onsite Demo เลยวันนัด Demo เกิน ${PIPE_DEMO_GRACE} วัน · Pending เกิน 15 วัน · Follow AT Sale เกิน 30 วัน</span></div>
+      ${overList.length ? `<div class="dm-scroll" style="max-height:420px;"><table class="dm-list"><thead><tr><td><b>LID</b></td><td><b>สถานะ</b></td><td><b>เหตุผล</b></td><td><b>เซล</b></td><td><b>ร้าน</b></td></tr></thead><tbody>
+        ${overList.slice(0, 300).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td>${escHtml(l.stage.name)}</td><td><span class="dm-gap">${escHtml(pipeOverText(l))}</span></td><td>${escHtml(l.sale || '–')}</td><td class="dm-ref">${escHtml(l.shop || '–')}</td></tr>`).join('')}
         </tbody></table></div>${overList.length > 300 ? `<div class="dm-th-sub">แสดง 300 จาก ${fmtNum(overList.length)}</div>` : ''}`
         : '<div class="dm-th-sub">ไม่มี — ทุกรายอยู่ในกรอบเวลา</div>'}
     </div></div>`;
@@ -4143,7 +4210,7 @@ function renderPipeline(){
   const groups = [];
   ppl.forEach(e => { let g = groups[groups.length - 1]; if(!g || g.t !== e.t){ g = { t: e.t, rows: [] }; groups.push(g); } g.rows.push(e); });
   const cells = e => `<td><b>${fmtNum(e.total)}</b></td>
-    <td class="pl-close">${e.close ? `<b>${fmtNum(e.close)}</b>` : '<span class="pl-zero">0</span>'}${e.over ? `<div class="dm-th-sub"><span class="dm-gap">${e.over}</span> เกินกำหนด</div>` : ''}</td>
+    <td class="pl-close">${e.close ? `<b>${fmtNum(e.close)}</b>` : '<span class="pl-zero">0</span>'}${e.over ? `<div class="dm-th-sub"><span class="dm-gap">${e.over}</span> ค้าง/ลืมปรับ</div>` : ''}</td>
     <td><b>${fmtNum(e.pipe)}</b> <span class="dm-th-sub">${pct(e.pipe, e.total)}</span></td>
     <td>${fmtNum(e.drop)} <span class="dm-th-sub">${pct(e.drop, e.total)}</span></td>
     <td>${pipeBar(e)}</td>
@@ -4169,7 +4236,7 @@ function renderPipeline(){
         ${PIPE_STEPS.map(s => `<th class="dm-grp pl-g${s.step}" colspan="${PIPE_STAGES.filter(x => x.step === s.step).length}">${s.step} · ${s.th}</th>`).join('')}</tr>
       <tr>${PIPE_STAGES.map(s => `<th class="pl-s${s.step}">${escHtml(s.name)}</th>`).join('')}</tr>
     </thead><tbody>${rows}</tbody></table></div></div>`;
-  html += `<div class="dm-foot">ที่มา: API Lead — คอลัมน์ "สถานะการขาย", "Sale ที่ดูแล" และ "วันที่ปรับสถานะการขาย" · <b>Pipeline</b> = New Lead (1) · Re-contact Sale (2) · Follow Sales / Follow Demo Sales (3) · Online / Onsite Demo (4) · Pending (5 ออกใบเสนอราคา) · Follow AT Sale (6 ติดตามยอด) · <b>รอปิด</b> = ขั้น 5–6 (Demo เสร็จแล้ว) · <b>หลุด</b> = สถานะอื่นทั้งหมด เช่น Not Lead, Not interested และสถานะของ CR · Success และ Refund ไม่นำมาคิด · <b>เกินกำหนด</b> = Pending นานเกิน 15 วัน หรือ Follow AT Sale นานเกิน 30 วัน (ปกติระบบจะย้ายสถานะให้อัตโนมัติ)</div>`;
+  html += `<div class="dm-foot">ที่มา: API Lead — คอลัมน์ "สถานะการขาย", "Sale ที่ดูแล" และ "วันที่ปรับสถานะการขาย" · <b>Pipeline</b> = New Lead (1) · Re-contact Sale (2) · Follow Sales / Follow Demo Sales (3) · Online / Onsite Demo (4) · Pending (5 ออกใบเสนอราคา) · Follow AT Sale (6 ติดตามยอด) · <b>รอปิด</b> = ขั้น 5–6 (Demo เสร็จแล้ว) · <b>หลุด</b> = สถานะอื่นทั้งหมด เช่น Not Lead, Not interested และสถานะของ CR · Success และ Refund ไม่นำมาคิด · <b>ค้างเกินกำหนด / ลืมปรับสถานะ</b> = Online / Onsite Demo ที่เลยวันนัด Demo ล่าสุด (จากชีทการนัดหมาย จับคู่ด้วย LID) เกิน ${PIPE_DEMO_GRACE} วัน หรือนัดถูกยกเลิกแล้ว · Pending นานเกิน 15 วัน · Follow AT Sale นานเกิน 30 วัน (สองสถานะหลังระบบย้ายให้อัตโนมัติ) · รายการลืมปรับสถานะแสดงในหน้าตรวจข้อมูลด้วย</div>`;
   body.innerHTML = html;
 }
 
@@ -4178,18 +4245,28 @@ function pipeDetail(e){
   const LIMIT = 60;
   let h = '';
   [...PIPE_STAGES].reverse().forEach(s => {
-    const list = e.list.filter(l => l.stage === s).sort((a, b) => (b.days ?? -1) - (a.days ?? -1));
+    const list = e.list.filter(l => l.stage === s).sort((a, b) => (b.over - a.over) || ((b.dc ? b.dc.gap ?? -1 : b.days ?? -1) - (a.dc ? a.dc.gap ?? -1 : a.days ?? -1)));
     if(!list.length) return;
     const st = PIPE_STEPS[s.step - 1];
     const over = list.filter(l => l.over).length;
-    h += `<div class="pl-sec"><div class="pl-sec-h"><i style="background:${st.color}"></i><b>${s.step} · ${escHtml(s.name)}</b> <span class="dm-th-sub">${st.th} · ${fmtNum(list.length)} ราย${over ? ` · <span class="dm-gap">เกินกำหนด ${over}</span>` : ''} · ค้างนานสุดก่อน</span></div>
+    h += `<div class="pl-sec"><div class="pl-sec-h"><i style="background:${st.color}"></i><b>${s.step} · ${escHtml(s.name)}</b> <span class="dm-th-sub">${st.th} · ${fmtNum(list.length)} ราย${over ? ` · <span class="dm-gap">${PIPE_DEMO_KEYS.has(s.key) ? 'ลืมปรับสถานะ' : 'เกินกำหนด'} ${over}</span>` : ''} · ${PIPE_DEMO_KEYS.has(s.key) ? 'เลยวันนัดนานสุดก่อน' : 'ค้างนานสุดก่อน'}</span></div>
       <div class="dm-scroll" style="max-height:240px;"><table class="dm-list"><tbody>
-      ${list.slice(0, LIMIT).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td class="dm-ref">${escHtml(l.shop || '–')}</td><td>${l.days === null ? '–' : `<span class="${l.over ? 'dm-gap' : ''}">${l.days} วัน</span>`}<span class="dm-th-sub"> ในสถานะนี้</span></td><td><span class="dm-th-sub">เข้ามา</span> ${l.d ? fmtThaiDate(l.d) : '–'}</td><td class="dm-ref">${escHtml(l.src || '–')} · ${escHtml(l.ch || '–')}</td></tr>`).join('')}
+      ${list.slice(0, LIMIT).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td class="dm-ref">${escHtml(l.shop || '–')}</td><td>${l.dc ? pipeDemoCell(l) : (l.days === null ? '–' : `<span class="${l.over ? 'dm-gap' : ''}">${l.days} วัน</span><span class="dm-th-sub"> ในสถานะนี้</span>`)}</td><td><span class="dm-th-sub">เข้ามา</span> ${l.d ? fmtThaiDate(l.d) : '–'}</td><td class="dm-ref">${escHtml(l.src || '–')} · ${escHtml(l.ch || '–')}</td></tr>`).join('')}
       </tbody></table></div>${list.length > LIMIT ? `<div class="dm-th-sub">แสดง ${LIMIT} จาก ${fmtNum(list.length)} ราย</div>` : ''}</div>`;
   });
   h += `<div class="pl-sec"><div class="pl-sec-h"><i style="background:${PIPE_DROP_COLOR}"></i><b>หลุดจาก Pipeline</b> <span class="dm-th-sub">${fmtNum(e.drop)} ราย</span></div>
     ${drops.length ? `<div class="pl-drops">${drops.map(([k, v]) => `<span class="dm-st">${escHtml(k)} <b>${fmtNum(v)}</b></span>`).join('')}</div>` : '<div class="dm-th-sub">ไม่มี</div>'}</div>`;
   return h;
+}
+
+function pipeDemoCell(l){
+  const dc = l.dc;
+  if(dc.flag === 'wait') return '<span class="dm-th-sub">กำลังโหลดวันนัด…</span>';
+  if(dc.flag === 'none') return '<span class="dm-th-sub">ไม่พบนัด Demo ในชีท</span>';
+  const d = fmtThaiDate(dc.appt.d);
+  if(dc.flag === 'cancel') return `<span class="dm-gap">นัด ${d} ถูกยกเลิก</span><span class="dm-th-sub"> · ลืมปรับสถานะ</span>`;
+  if(dc.flag === 'late') return `<span class="dm-gap">เลยวันนัด ${dc.gap} วัน</span><span class="dm-th-sub"> · นัด ${d}</span>`;
+  return dc.gap < 0 ? `<span class="dm-ok">นัด ${d}</span><span class="dm-th-sub"> · อีก ${-dc.gap} วัน</span>` : `<span>นัด ${d}</span><span class="dm-th-sub"> · ${dc.gap ? 'ผ่านมา ' + dc.gap + ' วัน' : 'วันนี้'}</span>`;
 }
 
 switchPage(CURRENT_PAGE);
