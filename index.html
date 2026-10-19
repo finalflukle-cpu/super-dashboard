@@ -4351,7 +4351,7 @@ function pipeAdd(e, l){
     e.pipe++; e.by[l.stage.key]++; e.step[l.stage.step]++;
     if(l.stage.step >= 5) e.close++;
     if(l.over) e.over++;
-    if(l.qt){ e.qt++; if(l.qt.st === 'paid') e.qtPaid++; else if(l.qt.st !== 'expired') e.qtAmt += l.qt.amt; /* มูลค่ารอชำระ: ไม่นับใบที่พ้นกำหนด */ if(l.stage.step >= 5) e.qtClose++; }
+    if(l.qt){ e.qt++; if(l.qt.st === 'paid') e.qtPaid++; else if(l.qt.st !== 'expired') e.qtAmt += l.qt.amt; /* มูลค่า QT ค้าง: ไม่นับใบที่ออกครบแล้ว/พ้นกำหนด */ if(l.stage.step >= 5) e.qtClose++; }
   } else { e.drop++; e.dropBy[l.stLabel] = (e.dropBy[l.stLabel] || 0) + 1; }
 }
 function pipeBar(e){
@@ -4421,7 +4421,7 @@ function renderPipeline(){
       !DEMO_ROWS ? (DEMO_STATE.state === 'error' ? 'โหลดชีทนัด Demo ไม่ได้ — ยังตรวจวันนัดไม่ได้' : 'กำลังตรวจกับวันนัด Demo…')
       : (() => { const n = leads.filter(l => l.over && l.dc).length; return n ? `<span class="dm-gap">${fmtNum(n)}</span> รายเลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน (ลืมปรับสถานะ)` : `ไม่มีรายที่เลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน`; })())}
     ${sdTile('รอปิดการขาย (ขั้น 5–6)', fmtNum(all.close), ' ', `Pending ${fmtNum(all.by.pending)} · Follow AT Sale ${fmtNum(all.by.followatsale)}`,
-      !QT_DOCS ? (QT_STATE.state === 'error' ? 'โหลดใบเสนอราคา (QT) ไม่ได้' : 'กำลังโหลดใบเสนอราคา…') : `ออกใบเสนอราคาแล้ว <b>${fmtNum(all.qtClose)}</b> จาก ${fmtNum(all.close)} ราย · ทั้ง Pipeline มี QT ${fmtNum(all.qt)} ราย มูลค่ารอชำระ ${moneyShort(all.qtAmt)} (ไม่รวมใบพ้นกำหนด)${all.qtPaid ? ` · <span class="dm-gap">${fmtNum(all.qtPaid)}</span> รายชำระแล้วแต่สถานะยังไม่เป็น Success` : ''}`)}
+      !QT_DOCS ? (QT_STATE.state === 'error' ? 'โหลดใบเสนอราคา (QT) ไม่ได้' : 'กำลังโหลดใบเสนอราคา…') : `ออกใบเสนอราคาแล้ว <b>${fmtNum(all.qtClose)}</b> จาก ${fmtNum(all.close)} ราย · ทั้ง Pipeline มี QT ${fmtNum(all.qt)} ราย มูลค่า QT ค้าง ${moneyShort(all.qtAmt)} (รอตอบรับ + ยอมรับแล้ว)${all.qtPaid ? ` · <span class="dm-gap">${fmtNum(all.qtPaid)}</span> ราย QT ออกครบแล้วแต่สถานะยังไม่เป็น Success` : ''}`)}
   </div>`;
 
   // ---- Pipeline ตามขั้น (ทั้ง scope) + Lead ค้างเกินกำหนด ----
@@ -4449,7 +4449,7 @@ function renderPipeline(){
   ppl.forEach(e => { let g = groups[groups.length - 1]; if(!g || g.t !== e.t){ g = { t: e.t, rows: [] }; groups.push(g); } g.rows.push(e); });
   const cells = e => `<td><b>${fmtNum(e.total)}</b></td>
     <td class="pl-close">${e.close ? `<b>${fmtNum(e.close)}</b>` : '<span class="pl-zero">0</span>'}${e.over ? `<div class="dm-th-sub"><span class="dm-gap">${e.over}</span> ค้าง/ลืมปรับ</div>` : ''}</td>
-    <td>${!QT_DOCS ? '…' : e.qt ? `<b>${fmtNum(e.qt)}</b> <span class="dm-th-sub">${moneyShort(e.qtAmt)}</span>${e.qtPaid ? `<div class="dm-th-sub"><span class="dm-gap">${e.qtPaid}</span> ชำระแล้ว</div>` : ''}` : '<span class="pl-zero">0</span>'}</td>
+    <td>${!QT_DOCS ? '…' : e.qt ? `<b>${fmtNum(e.qt)}</b> <span class="dm-th-sub">${moneyShort(e.qtAmt)}</span>${e.qtPaid ? `<div class="dm-th-sub"><span class="dm-gap">${e.qtPaid}</span> QT ออกครบแล้ว</div>` : ''}` : '<span class="pl-zero">0</span>'}</td>
     <td><b>${fmtNum(e.pipe)}</b> <span class="dm-th-sub">${pct(e.pipe, e.total)}</span></td>
     <td>${fmtNum(e.drop)} <span class="dm-th-sub">${pct(e.drop, e.total)}</span></td>
     <td>${pipeBar(e)}</td>
@@ -4471,7 +4471,7 @@ function renderPipeline(){
   html += `<div class="panel"><div class="panel-head"><h2>Pipeline รายเซล (ตาม Sale ที่ดูแล)</h2><span class="hint">แตะชื่อเพื่อดูรายการ Lead ในแต่ละขั้น และสถานะที่หลุด</span></div>
     <div class="sd-legend">${PIPE_STEPS.map(s => `<span><i style="background:${s.color}"></i>${s.step} ${s.th}</span>`).join('')}<span><i style="background:${PIPE_DROP_COLOR}"></i>หลุด</span></div>
     <div class="table-x"><table class="team-table dm-table pl-table"><thead>
-      <tr><th rowspan="2" style="text-align:left;">เซล</th><th rowspan="2">Lead<br>ในมือ</th><th rowspan="2" class="pl-close">รอปิด<br><span class="dm-th-sub">ขั้น 5–6</span></th><th rowspan="2">ออก QT แล้ว<br><span class="dm-th-sub">ราย · มูลค่ารอชำระ</span></th><th rowspan="2">อยู่ใน<br>Pipeline</th><th rowspan="2">หลุด</th><th rowspan="2" style="min-width:140px;">สัดส่วน</th>
+      <tr><th rowspan="2" style="text-align:left;">เซล</th><th rowspan="2">Lead<br>ในมือ</th><th rowspan="2" class="pl-close">รอปิด<br><span class="dm-th-sub">ขั้น 5–6</span></th><th rowspan="2">ออก QT แล้ว<br><span class="dm-th-sub">ราย · มูลค่า QT ค้าง</span></th><th rowspan="2">อยู่ใน<br>Pipeline</th><th rowspan="2">หลุด</th><th rowspan="2" style="min-width:140px;">สัดส่วน</th>
         ${PIPE_STEPS.map(s => `<th class="dm-grp pl-g${s.step}" colspan="${PIPE_STAGES.filter(x => x.step === s.step).length}">${s.step} · ${s.th}</th>`).join('')}</tr>
       <tr>${PIPE_STAGES.map(s => `<th class="pl-s${s.step}">${escHtml(s.name)}</th>`).join('')}</tr>
     </thead><tbody>${rows}</tbody></table></div></div>`;
@@ -4806,12 +4806,12 @@ function renderTracking(){
   body.innerHTML = html;
 }
 // ===== ใบเสนอราคา (QT) — ไฟล์ส่วนแบ่งการขาย แท็บ QT (ผู้ใช้เพิ่ม 19 ต.ค. 2026) =====
-// ไม่นับ: ร่าง (isDraft) / ยกเลิก (isVoid) · peakStatus "ออกครบแล้ว" = ชำระแล้ว · จับคู่ Lead จาก "LIDxxxxx" ในช่อง remark
+// ไม่นับ: ร่าง (isDraft) / ยกเลิก (isVoid) · peakStatus "ออกครบแล้ว" = ทำเอกสารต่อครบแล้ว (ใบแจ้งหนี้/ใบเสร็จ — ยังไม่แน่ว่าได้เงินแล้ว ยอดเงินจริงดูจาก RT) · จับคู่ Lead จาก "LIDxxxxx" ในช่อง remark
 const QT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTgqwzq71iw6LFT7BCsOti3darM623vsX75QHM7IUQemEHcl0AszGD4an24LJfDVTR_WQkqqWWDAfrV/pubhtml?gid=1800668833&single=true';
 let QT_DOCS = null, QT_BY_LID = new Map(), QT_STATE = { state: 'idle', msg: '', maxD: '' };
 const QT_ST = {
-  paid:     { t: 'ชำระแล้ว', full: 'ออกครบแล้ว (ชำระแล้ว)', c: '#2F7D4F' },
-  accepted: { t: 'ยอมรับแล้ว', full: 'ยอมรับแล้ว · รอชำระ', c: '#E0A800' },
+  paid:     { t: 'ออกครบแล้ว', full: 'ออกครบแล้ว (ทำบิลต่อแล้ว)', c: '#2F7D4F' },
+  accepted: { t: 'ยอมรับแล้ว', full: 'ยอมรับแล้ว · รอทำบิล', c: '#E0A800' },
   open:     { t: 'รอตอบรับ', full: 'ส่งแล้ว · รอลูกค้าตอบรับ', c: '#1D7FA3' },
   expired:  { t: 'พ้นกำหนด', full: 'พ้นกำหนด (เลยวันครบกำหนด)', c: '#B3402A' },
 };
@@ -4917,12 +4917,12 @@ function sdQtPanel(R, label){
     <div class="qt-head">
       <div><div class="sd-tile-label">ออกใบเสนอราคา</div><div class="sd-tile-value">${fmtNum(c.all.n)} <span class="qt-unit">ใบ</span></div><div class="sd-tile-delta">${sdDelta(c.all.n, p.all.n)}</div><div class="dm-th-sub">ลูกค้า ${fmtNum(c.cust.size)} ราย</div></div>
       <div><div class="sd-tile-label">มูลค่ารวม (ก่อน VAT)</div><div class="sd-tile-value">${moneyShort(c.all.val)}</div><div class="sd-tile-delta">${sdDelta(c.all.val, p.all.val)}</div><div class="dm-th-sub">ไม่รวมใบที่พ้นกำหนด (${moneyShort(c.st.expired.amt)})</div></div>
-      <div><div class="sd-tile-label">ชำระแล้ว (ออกครบแล้ว)</div><div class="sd-tile-value">${pctTxt(rate(c))}</div><div class="sd-tile-delta">${sdDelta(rate(c), rate(p), true)}</div><div class="dm-th-sub">${fmtNum(c.st.paid.n)} ใบ · ${moneyShort(c.st.paid.amt)}</div></div>
+      <div><div class="sd-tile-label" title="สถานะ ออกครบแล้ว ใน PEAK = ใบเสนอราคาถูกทำเป็นใบแจ้งหนี้/ใบเสร็จครบแล้ว ยอดเงินที่รับจริงดูที่ยอดขาย (RT)">ออกครบแล้ว</div><div class="sd-tile-value">${pctTxt(rate(c))}</div><div class="sd-tile-delta">${sdDelta(rate(c), rate(p), true)}</div><div class="dm-th-sub">${fmtNum(c.st.paid.n)} ใบ · ${moneyShort(c.st.paid.amt)}</div></div>
     </div>
     <div class="qt-bar">${bar}</div>
     <div class="qt-boxes">${QT_ORDER.map(box).join('')}</div>
-    ${per.length ? `<div class="table-x" style="margin-top:12px;"><table class="team-table qt-table"><thead><tr><th style="text-align:left;">เซล (Tag ในใบเสนอราคา)</th><th>ออก</th><th>มูลค่า<div class="dm-th-sub">ไม่รวมพ้นกำหนด</div></th><th>ชำระแล้ว</th><th>ยอมรับ รอชำระ</th><th>รอตอบรับ</th><th>พ้นกำหนด</th><th>% ชำระ</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="dq-how">ยังไม่มีใบเสนอราคาในเดือนนี้</div>'}
-    <div class="dq-how" style="margin-top:6px;">ใส่ LID ไว้ในหมายเหตุ ${fmtNum(c.withLid)} จาก ${fmtNum(c.all.n)} ใบ (ใช้ผูกกับ Lead ในหน้า Pipeline) · สถานะตามช่อง peakStatus ใน PEAK</div>
+    ${per.length ? `<div class="table-x" style="margin-top:12px;"><table class="team-table qt-table"><thead><tr><th style="text-align:left;">เซล (Tag ในใบเสนอราคา)</th><th>ออก</th><th>มูลค่า<div class="dm-th-sub">ไม่รวมพ้นกำหนด</div></th><th>ออกครบแล้ว</th><th>ยอมรับแล้ว</th><th>รอตอบรับ</th><th>พ้นกำหนด</th><th>% ออกครบ</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="dq-how">ยังไม่มีใบเสนอราคาในเดือนนี้</div>'}
+    <div class="dq-how" style="margin-top:6px;">ใส่ LID ไว้ในหมายเหตุ ${fmtNum(c.withLid)} จาก ${fmtNum(c.all.n)} ใบ (ใช้ผูกกับ Lead ในหน้า Pipeline) · สถานะตามช่อง peakStatus ใน PEAK · ยอดเงินที่รับจริงดูที่ยอดขาย (RT)</div>
   </div>`;
 }
 switchPage(CURRENT_PAGE);
@@ -4931,4 +4931,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v33 2026-10-19 QT value excludes expired -->
+<!-- build: v34 2026-10-19 QT label ออกครบแล้ว (not paid) -->
