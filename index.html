@@ -3001,12 +3001,14 @@ function sdMetrics(from, to){
   const leadsIn = FIRST_CONTACT_AGG.filter(r => inS(r.d)).reduce((a, r) => a + r.n, 0);
   const lastRows = MKT.lid_agg.filter(r => inS(r.d));
   const leadsActive = lastRows.reduce((a, r) => a + r.n, 0);
-  const qualify = lastRows.filter(r => ['Follow','Demo','Purchase'].includes(r.s)).reduce((a, r) => a + r.n, 0);
+  // Qualify Lead = Lead ที่ติดต่อมาครั้งแรกในช่วงนี้ และ Quality Lead เป็น Follow / Demo / Purchase (แบบ ค. — ผู้ใช้เลือก 19 ต.ค. 2026)
+  const isQ = s => s === 'Follow' || s === 'Demo' || s === 'Purchase';
+  const qualify = FIRST_CONTACT_AGG.filter(r => inS(r.d) && isQ(r.s)).reduce((a, r) => a + r.n, 0);
   // แยก Inbound / Event / Outbound
   const ioZero = () => ({ inbound: 0, event: 0, outbound: 0 });
   const leadsInIO = ioZero(), qualifyIO = ioZero();
   FIRST_CONTACT_AGG.forEach(r => { if(!inS(r.d) || r.sc === undefined) return; const pr = SC_PAIRS[r.sc]; const t = pr ? getLeadIOType(pr[0], pr[1]) : 'inbound'; if(t in leadsInIO) leadsInIO[t] += r.n; });
-  GROUP.group_lead_agg.forEach(r => { if(!inS(r.d) || !'FDP'.includes(r.s)) return; const t = classifyGroup(r.g); if(t in qualifyIO) qualifyIO[t] += r.n; });
+  FIRST_CONTACT_AGG.forEach(r => { if(!inS(r.d) || !isQ(r.s) || r.sc === undefined) return; const pr = SC_PAIRS[r.sc]; const t = pr ? getLeadIOType(pr[0], pr[1]) : 'inbound'; if(t in qualifyIO) qualifyIO[t] += r.n; });
   const succ = FOCUS_SUCCESS.filter(r => inI(r.pd));
   const lic = succ.reduce((a, r) => a + r.qty, 0);
   const licOld = succ.filter(r => r.rn).reduce((a, r) => a + r.qty, 0);
@@ -3016,7 +3018,7 @@ function sdMetrics(from, to){
   const speeds = docs.filter(d => d.lic > 0 && !d.old && d.days !== null && d.days >= 0).map(d => d.days).sort((a, b) => a - b);
   const medianDays = speeds.length ? speeds[Math.floor(speeds.length / 2)] : null;
   return { leadsIn, leadsActive, qualify, leadsInIO, qualifyIO, lic, licNew: lic - licOld, licOld, rev, receipts, medianDays, speedN: speeds.length,
-           conv: qualify ? (lic - licOld) / qualify : null, convOld: qualify ? licOld / qualify : null };
+           convAll: qualify ? lic / qualify : null, conv: qualify ? (lic - licOld) / qualify : null, convOld: qualify ? licOld / qualify : null };
 }
 
 // รายละเอียด Inbound / Event / Outbound ใต้ตัวเลขหลัก
@@ -3025,6 +3027,11 @@ function sdIOSplit(io, pio){
   const tot = io.inbound + io.event + io.outbound;
   const row = (k, label, color) => `<div class="sd-io-row"><i style="background:${color}"></i><span>${label}</span><b>${fmtNum(io[k])}</b><span class="sd-io-pct">${tot ? Math.round(io[k] / tot * 100) + '%' : '–'}</span>${pio ? sdDelta(io[k], pio[k]) : ''}</div>`;
   return `<div class="sd-io">${row('inbound', 'Inbound', SD_C.inbound)}${row('event', 'Event', SD_C.event)}${row('outbound', 'Outbound', SD_C.outbound)}</div>`;
+}
+// Conversion แยกลูกค้าใหม่ / ลูกค้าเก่า (บรรทัดย่อยใต้ Conversion รวม)
+function sdConvSplit(cur, prev){
+  const row = (label, color, v, pv, lic) => `<div class="sd-io-row"><i style="background:${color}"></i><span>${label} <span class="sd-io-pct">${fmtQty(lic)} License</span></span><b>${pctTxt(v)}</b><span></span>${prev ? sdDelta(v, pv, true) : ''}</div>`;
+  return `<div class="sd-io">${row('ลูกค้าใหม่', SD_C.newCust, cur.conv, prev && prev.conv, cur.licNew)}${row('ลูกค้าเก่า', SD_C.oldCust, cur.convOld, prev && prev.convOld, cur.licOld)}</div>`;
 }
 function sdDelta(cur, prev, isPct){
   if(prev === null || prev === undefined || cur === null || cur === undefined) return '';
@@ -3096,11 +3103,10 @@ function renderSuper(){
     ${sdTile('ระยะเวลาปิดการขาย', cur.medianDays === null ? '–' : cur.medianDays + ' วัน', cur.medianDays !== null && prev.medianDays !== null ? `<span class="sd-delta ${cur.medianDays <= prev.medianDays ? 'up' : 'down'}">${cur.medianDays <= prev.medianDays ? '▼ เร็วขึ้น' : '▲ ช้าลง'} ${Math.abs(cur.medianDays - prev.medianDays)} วัน</span>` : '',
         cur.speedN ? `ค่ากลาง จากติดต่อครั้งแรก → ชำระเงิน (${cur.speedN} ใบ)` : 'ต้องมีใบเสร็จที่ใส่ LID', '')}
   </div>
-  <div class="sd-tiles sd-tiles4">
+  <div class="sd-tiles sd-tiles3">
     ${sdTile('Lead เข้าใหม่', fmtNum(cur.leadsIn), sdDelta(cur.leadsIn, prev.leadsIn), 'นับจากวันที่ติดต่อครั้งแรก', '', sdIOSplit(cur.leadsInIO, prev.leadsInIO))}
-    ${sdTile('Qualify Lead', fmtNum(cur.qualify), sdDelta(cur.qualify, prev.qualify), `จาก Lead ที่เคลื่อนไหว ${fmtNum(cur.leadsActive)} · ${pctTxt(cur.leadsActive ? cur.qualify / cur.leadsActive : null)}`, '', sdIOSplit(cur.qualifyIO, prev.qualifyIO))}
-    ${sdTile('Conversion · ลูกค้าใหม่', pctTxt(cur.conv), sdDelta(cur.conv, prev.conv, true), `License ลูกค้าใหม่ <b>${fmtQty(cur.licNew)}</b> ÷ Qualify Lead <b>${fmtNum(cur.qualify)}</b>`, '')}
-    ${sdTile('Conversion · ลูกค้าเก่า', pctTxt(cur.convOld), sdDelta(cur.convOld, prev.convOld, true), `License ลูกค้าเก่า <b>${fmtQty(cur.licOld)}</b> ÷ Qualify Lead <b>${fmtNum(cur.qualify)}</b>`, '')}
+    ${sdTile('Qualify Lead', fmtNum(cur.qualify), sdDelta(cur.qualify, prev.qualify), `${pctTxt(cur.leadsIn ? cur.qualify / cur.leadsIn : null)} ของ Lead เข้าใหม่ · Follow / Demo / Purchase`, 'นับจากวันที่ติดต่อครั้งแรก (เดือนล่าสุดจะเพิ่มขึ้นเรื่อยๆ ระหว่างที่ยังคัดกรอง)', sdIOSplit(cur.qualifyIO, prev.qualifyIO))}
+    ${sdTile('Conversion', pctTxt(cur.convAll), sdDelta(cur.convAll, prev.convAll, true), `License ทั้งหมด <b>${fmtQty(cur.lic)}</b> ÷ Qualify Lead <b>${fmtNum(cur.qualify)}</b>`, '', sdConvSplit(cur, prev))}
   </div>`;
 
   // ---- 2) แนวโน้ม 12 เดือน ----
@@ -3157,7 +3163,7 @@ function renderSuper(){
   FOCUS_LEADS.forEach(r => {
     if(!isActiveSale(r.s)) return;
     if(r.fc !== null && r.fc >= fI && r.fc <= tI) ensure(r.s).leads++;
-    if(r.su !== null && r.su >= fI && r.su <= tI && ['F','D','P'].includes(r.q)) ensure(r.s).qual++;
+    if(r.fc !== null && r.fc >= fI && r.fc <= tI && ['F','D','P'].includes(r.q)) ensure(r.s).qual++;   // Qualify นับตามวันที่ติดต่อครั้งแรก (แบบ ค.)
   });
   FOCUS_SUCCESS.forEach(r => { if(!isActiveSale(r.s) || r.pd < fI || r.pd > tI) return; const e = ensure(r.s); e.lic += r.qty; if(!r.rn) e.licNew += r.qty; });
   const nameIdx = new Map(SALE_NAMES.map((s, i) => [s.n, i]));
@@ -3166,10 +3172,10 @@ function renderSuper(){
   SALE_NAMES.forEach((s, i) => { if(activeSet.has(s.t)) ensure(i); });
   const rows = Object.values(per).sort((a, b) => b.lic - a.lic || b.rev - a.rev || b.qual - a.qual);
   const medal = k => k === 0 ? '🥇' : k === 1 ? '🥈' : k === 2 ? '🥉' : (k + 1);
-  html += `<div class="panel"><div class="panel-head"><h2>อันดับเซล · ${monthLabelFull(ym)}</h2><span class="hint">เรียงตาม License · Qualify นับตามวันอัพเดทสถานะ</span></div>
+  html += `<div class="panel"><div class="panel-head"><h2>อันดับเซล · ${monthLabelFull(ym)}</h2><span class="hint">เรียงตาม License · Qualify = Lead ที่ได้รับในเดือนนี้ที่เป็น Follow / Demo / Purchase · Conversion = License ทั้งหมด ÷ Qualify</span></div>
     <div class="table-x"><table class="team-table sd-rank"><thead><tr><th>#</th><th style="text-align:left;">เซล</th><th style="text-align:left;">ทีม</th><th>License</th><th>ลูกค้าใหม่</th><th>ยอดขาย</th><th>Lead ใหม่ที่ได้รับ</th><th>Qualify</th><th>Conversion</th></tr></thead><tbody>
     ${rows.map((e, k) => `<tr class="${k < 3 && e.lic > 0 ? 'sd-top' : ''}"><td>${e.lic > 0 ? medal(k) : '–'}</td><td style="text-align:left;">${escHtml(SALE_NAMES[e.i].n)}</td><td style="text-align:left;"><span class="team-pill sm">${escHtml(SALE_NAMES[e.i].t)}</span></td>
-      <td><b>${fmtQty(e.lic)}</b></td><td>${fmtQty(e.licNew)}</td><td>${live ? money(e.rev) : '–'}</td><td>${fmtNum(e.leads)}</td><td>${fmtNum(e.qual)}</td><td>${pctTxt(e.qual ? e.licNew / e.qual : null)}</td></tr>`).join('')}
+      <td><b>${fmtQty(e.lic)}</b></td><td>${fmtQty(e.licNew)}</td><td>${live ? money(e.rev) : '–'}</td><td>${fmtNum(e.leads)}</td><td>${fmtNum(e.qual)}</td><td>${pctTxt(e.qual ? e.lic / e.qual : null)}</td></tr>`).join('')}
     </tbody></table></div>${live ? '' : '<div class="dq-how">ยอดขายรายเซลต้องเชื่อมชีท RT</div>'}</div>`;
 
   // ---- 5) เทียบทีม + ช่องทาง ----
@@ -3181,10 +3187,10 @@ function renderSuper(){
   const maxLic = Math.max(1, ...teamAgg.map(t => t.lic));
   const teamHtml = teamAgg.map(t => `<div class="sd-team"><div class="sd-team-top"><b>${escHtml(t.t)}</b><span>${t.n} คน</span></div>
       <div class="sd-bar"><i style="width:${t.lic / maxLic * 100}%"></i></div>
-      <div class="sd-team-stats"><span><b>${fmtQty(t.lic)}</b> License</span><span>${live ? moneyShort(t.rev) : '–'}</span><span>Conv. ${pctTxt(t.qual ? t.licNew / t.qual : null)}</span><span>${t.n ? fmtQty(t.lic / t.n) : '–'} / คน</span></div></div>`).join('');
+      <div class="sd-team-stats"><span><b>${fmtQty(t.lic)}</b> License</span><span>${live ? moneyShort(t.rev) : '–'}</span><span>Conv. ${pctTxt(t.qual ? t.lic / t.qual : null)}</span><span>${t.n ? fmtQty(t.lic / t.n) : '–'} / คน</span></div></div>`).join('');
 
   const io = { inbound: { lead: 0, qual: 0, lic: 0, licNew: 0 }, event: { lead: 0, qual: 0, lic: 0, licNew: 0 }, outbound: { lead: 0, qual: 0, lic: 0, licNew: 0 } };
-  GROUP_DETAIL.forEach(r => { if(r.d < R.from || r.d > R.to) return; const k = classifyGroup(r.g); if(!io[k]) return; io[k].lead += r.n; if('FDP'.includes(r.q)) io[k].qual += r.n; });
+  FIRST_CONTACT_AGG.forEach(r => { if(r.d < R.from || r.d > R.to || r.sc === undefined) return; const pr = SC_PAIRS[r.sc]; const k = pr ? getLeadIOType(pr[0], pr[1]) : 'inbound'; if(!io[k]) return; io[k].lead += r.n; if(r.s === 'Follow' || r.s === 'Demo' || r.s === 'Purchase') io[k].qual += r.n; });   // นับตามวันที่ติดต่อครั้งแรก (ตรงกับตัวเลขด้านบน)
   const srcLic = {};
   FOCUS_SUCCESS.forEach(r => {
     if(r.pd < fI || r.pd > tI) return;
@@ -3195,7 +3201,7 @@ function renderSuper(){
     srcLic[src] = (srcLic[src] || 0) + r.qty;
   });
   const ioLabel = { inbound: 'Inbound', event: 'Event', outbound: 'Outbound' };
-  const ioHtml = ['inbound','event','outbound'].map(k => `<tr><td style="text-align:left;"><span class="type-badge t-${k}">${ioLabel[k]}</span></td><td>${fmtNum(io[k].lead)}</td><td>${pctTxt(io[k].lead ? io[k].qual / io[k].lead : null)}</td><td><b>${fmtQty(io[k].lic)}</b></td><td>${pctTxt(io[k].qual ? io[k].licNew / io[k].qual : null)}</td></tr>`).join('');
+  const ioHtml = ['inbound','event','outbound'].map(k => `<tr><td style="text-align:left;"><span class="type-badge t-${k}">${ioLabel[k]}</span></td><td>${fmtNum(io[k].lead)}</td><td>${pctTxt(io[k].lead ? io[k].qual / io[k].lead : null)}</td><td><b>${fmtQty(io[k].lic)}</b></td><td>${pctTxt(io[k].qual ? io[k].lic / io[k].qual : null)}</td></tr>`).join('');
   const topSrc = Object.entries(srcLic).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const maxSrc = Math.max(1, ...topSrc.map(x => x[1]));
   html += `<div class="sd-grid2">
