@@ -807,7 +807,7 @@
         <p id="fc-sub">กำลังโหลดข้อมูล…</p>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="filter-group"><label>สัปดาห์ (ตามวันที่ในชีท Sale 4 Matrix)</label><select id="fc-week"></select></div>
+        <div class="filter-group"><label>สัปดาห์ (จันทร์–อาทิตย์ ตามวันที่ในชีท Sale 4 Matrix)</label><select id="fc-week"></select></div>
       </div>
     </div>
     <div id="fc-body"></div>
@@ -5079,11 +5079,30 @@ const FC_ST = {
   miss:  { t: 'ไม่ปิด', c: 'bad' },
   nolid: { t: 'ไม่มี LID ตรวจไม่ได้', c: '' },
 };
+// QT ของร้านนี้: รวมทุกใบที่ออกในช่วง 45 วันก่อนเริ่มสัปดาห์ ถึงวันสิ้นสุดสัปดาห์ (ร้านหลายสาขามักออกใบละสาขา)
+// ไม่มีในช่วงนั้น → ใช้ใบล่าสุดที่เคยออก (แสดงว่า "ใบเก่า")
+function fcQtSum(n, from, to){
+  const all = QT_BY_LID.get(n) || [];
+  if(!all.length) return null;
+  const lo = demoAddDays(from, -45), hi = to || from;
+  let list = all.filter(q => q.d >= lo && q.d <= hi), old = false;
+  if(!list.length){ list = [all.find(q => q.d <= hi) || all[all.length - 1]]; old = true; }
+  const cnt = { paid: 0, accepted: 0, open: 0, expired: 0 }; let amt = 0;
+  list.forEach(q => { cnt[q.st]++; amt += q.amt; });
+  const best = QT_ORDER.find(k => cnt[k]) || 'open';
+  return { list, cnt, amt, best, old };
+}
+function fcQtChip(s){
+  const c = QT_ST[s.best].c;
+  const parts = QT_ORDER.filter(k => s.cnt[k]).map(k => `${QT_ST[k].t}${s.list.length > 1 ? ' ' + s.cnt[k] : ''}`).join(' · ');
+  const tip = s.list.map(q => `${q.code} · ${fmtThaiDate(q.d)} · ${QT_ST[q.st].full} · ${money(q.amt)}`).join('\n');
+  return `<span class="qt-chip" style="border-color:${c};color:${c}" title="${escHtml(tip)}">QT ${s.list.length > 1 ? s.list.length + ' ใบ · ' : ''}${moneyShort(s.amt)} · ${escHtml(parts)}</span>${s.old ? '<div class="dm-th-sub">ใบเก่า ' + escHtml(fmtThaiDate(s.list[0].d)) + '</div>' : ''}`;
+}
 function fcIsWon(s){ return /\bwon\b|ปิดได้|ปิดการขาย|success|สำเร็จ/i.test(String(s || '')); }
 // ตรวจผล 1 ร้าน
 function fcCheck(it, from, to, today){
   const n = normLid(it.lid);
-  const o = { n, rtIn: [], rtLate: null, lead: n !== null && LEAD_INDEX ? LEAD_INDEX.get(n) : null, qt: n !== null && QT_DOCS ? qtForLid(it.lid) : null, saleWon: fcIsWon(it.res) };
+  const o = { n, rtIn: [], rtLate: null, lead: n !== null && LEAD_INDEX ? LEAD_INDEX.get(n) : null, qt: n !== null && QT_DOCS ? fcQtSum(n, from, to) : null, saleWon: fcIsWon(it.res) };
   if(n !== null){
     const lateEnd = demoAddDays(to || from, FC_LATE_DAYS);
     (fcRtByLid().get(n) || []).forEach(d => {
@@ -5183,10 +5202,10 @@ function renderForecast(){
           <td style="text-align:left;"><span class="tk-pill ${S.c}">${S.t}</span>${note}</td>
           <td style="text-align:left;">${rt}</td>
           <td style="text-align:left;">${o.lead ? escHtml(o.lead.st || '–') : '<span class="pl-zero">ไม่พบ Lead</span>'}</td>
-          <td style="text-align:left;">${o.qt ? qtChip(o.qt) : '<span class="pl-zero">–</span>'}</td></tr>`;
+          <td style="text-align:left;">${o.qt ? fcQtChip(o.qt) : '<span class="pl-zero">–</span>'}</td></tr>`;
       }).join('') : `<tr><td colspan="8" style="text-align:left;"><span class="dm-gap">ไม่ได้ใส่ร้านใน Tier 1 ของสัปดาห์นี้</span></td></tr>`;
       html += `<tr class="dm-detail"><td colspan="${NC}" style="padding:0;"><div class="pl-detail" style="padding:6px 8px 12px;">
-        <table class="dm-list"><thead><tr><th style="text-align:left;">LID</th><th style="text-align:left;">ร้าน · สินค้า</th><th>มูลค่า</th><th style="text-align:left;">ผลที่เซลกรอก</th><th style="text-align:left;">ระบบตรวจ</th><th style="text-align:left;">ใบเสร็จ RT</th><th style="text-align:left;">สถานะ Lead ตอนนี้</th><th style="text-align:left;">QT ล่าสุด</th></tr></thead><tbody>${list}</tbody></table>
+        <table class="dm-list"><thead><tr><th style="text-align:left;">LID</th><th style="text-align:left;">ร้าน · สินค้า</th><th>มูลค่า</th><th style="text-align:left;">ผลที่เซลกรอก</th><th style="text-align:left;">ระบบตรวจ</th><th style="text-align:left;">ใบเสร็จ RT</th><th style="text-align:left;">สถานะ Lead ตอนนี้</th><th style="text-align:left;">ใบเสนอราคา (QT)<div class="dm-th-sub">ช่วง 45 วันก่อน–จบสัปดาห์</div></th></tr></thead><tbody>${list}</tbody></table>
         <div class="dm-th-sub" style="margin-top:6px;">ชีท: แท็บ ${escHtml(k)}${s.e.live ? ' (ข้อมูลสด)' : ' (จากประวัติ Forecast Log)'}</div></div></td></tr>`;
     }
     return html;
@@ -5223,4 +5242,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v35 2026-10-19 Forecast T1 page -->
+<!-- build: v36 2026-10-19 Forecast QT sum + Mon-Sun -->
