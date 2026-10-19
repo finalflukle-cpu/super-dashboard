@@ -500,6 +500,17 @@
   .sd-tiles4{grid-template-columns:repeat(4,1fr);}
   @media (max-width:1180px){ .sd-tiles4{grid-template-columns:1fr 1fr;} }
   @media (max-width:640px){ .sd-tiles3 > :nth-child(3){grid-column:span 2;} .sd-io-row{grid-template-columns:8px 1fr auto 30px;gap:5px;font-size:11.5px;} .sd-io-row .sd-delta{display:none;} }
+  .qt-head{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:12px;} .qt-unit{font-size:14px;font-weight:500;color:var(--text-secondary);}
+  .qt-bar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:#F0F0EB;margin:4px 0 10px 0;} .qt-bar i{display:block;height:100%;}
+  .qt-boxes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .qt-box{border:1px solid var(--border);border-radius:8px;padding:8px 10px;} .qt-box-l{font-size:12px;color:var(--text-secondary);display:flex;gap:6px;align-items:center;} .qt-box-l i{width:9px;height:9px;border-radius:2px;display:inline-block;flex:none;}
+  .qt-box-v{font-size:18px;font-weight:700;margin-top:2px;} .qt-box-v span{font-size:12px;font-weight:500;color:var(--text-secondary);} .qt-box-a{font-size:12.5px;color:var(--text-secondary);}
+  .qt-table td, .qt-table th{white-space:nowrap;}
+  .qt-chip{display:inline-block;border:1px solid;border-radius:999px;padding:0 7px;font-size:11px;font-weight:600;white-space:nowrap;background:#fff;}
+  @media (max-width:640px){ .qt-head{grid-template-columns:1fr 1fr;} .qt-boxes{grid-template-columns:1fr 1fr;} }
+  .sd-io-tr{cursor:pointer;} .sd-io-tr:hover td{background:#FAFAF6;} .sd-io-tr.open td{background:#FFFBEA;}
+  .sd-io-sub td{background:#FCFCF8;font-size:12.5px;} .sd-io-sub td:first-child{padding-left:34px;}
+  .sd-funnel td, .sd-funnel th{white-space:nowrap;}
   .sd-io{border-top:1px solid var(--border);margin-top:10px;padding-top:8px;display:flex;flex-direction:column;gap:4px;}
   .sd-io-row{display:grid;grid-template-columns:10px 1fr auto 38px auto;gap:6px;align-items:center;font-size:12px;color:var(--text-secondary);}
   .sd-io-row i{width:8px;height:8px;border-radius:2px;display:block;}
@@ -2995,6 +3006,44 @@ function sdMonthRange(ym){
 }
 
 // ตัวเลขหลักของช่วงวันที่ [from, to]
+// ---- Qualify → นัด Demo (ผู้ใช้ขอ 19 ต.ค. 2026) ----
+// Lead ที่ติดต่อครั้งแรกในช่วง + Quality = Follow/Demo/Purchase → มีนัด Demo (Online / On Site / Visit, ไม่ยกเลิก, วันนัด ≥ วันติดต่อครั้งแรก) ในชีทนัดหมายหรือไม่ (จับคู่ด้วย LID)
+let SD_DEMO_IDX = null, SD_DEMO_SRC = null, SD_IO_OPEN = new Set(), SD_INIT_CLICK = false;
+function sdDemoIndex(){
+  if(!DEMO_ROWS) return null;
+  if(SD_DEMO_SRC === DEMO_ROWS) return SD_DEMO_IDX;
+  const m = new Map();
+  DEMO_ROWS.forEach(r => { if(!r.lid || !r.d || !DEMO_COUNTED.has(r.kind) || r.st === 'cancel') return; const k = String(r.lid).toUpperCase().replace(/\s+/g, ''); (m.get(k) || m.set(k, []).get(k)).push(r); });
+  SD_DEMO_IDX = m; SD_DEMO_SRC = DEMO_ROWS; return m;
+}
+function sdDemoStats(from, to){
+  const idx = sdDemoIndex();
+  const isQ = q => q === 'Follow' || q === 'Demo' || q === 'Purchase';
+  const z = () => ({ lead: 0, qual: 0, booked: 0, done: 0 });
+  const out = { ready: !!idx, all: z(), io: { inbound: z(), event: z(), outbound: z() }, pairs: new Map() };
+  CALL_LEADS.forEach(l => {
+    if(!l.d || l.d < from || l.d > to) return;
+    const t = getLeadIOType(l.src, l.ch);
+    const pk = l.src + '\u0000' + l.ch;
+    let p = out.pairs.get(pk); if(!p){ p = Object.assign(z(), { src: l.src, ch: l.ch, t }); out.pairs.set(pk, p); }
+    const io = out.io[t];
+    [out.all, io, p].forEach(e => { if(e) e.lead++; });
+    if(!isQ(l.q)) return;
+    [out.all, io, p].forEach(e => { if(e) e.qual++; });
+    if(!idx) return;
+    const ap = (idx.get(String(l.lid).toUpperCase().replace(/\s+/g, '')) || []).filter(a => a.d >= l.d);
+    if(ap.length) [out.all, io, p].forEach(e => { if(e) e.booked++; });
+    if(ap.some(a => a.st === 'done')) [out.all, io, p].forEach(e => { if(e) e.done++; });
+  });
+  return out;
+}
+function sdDemoSplit(cur, prev){
+  if(!cur.ready) return `<div class="sd-io"><div class="dq-how">${DEMO_STATE.state === 'error' ? 'โหลดชีทนัดหมายไม่ได้' : 'กำลังโหลดนัด Demo…'}</div></div>`;
+  const rate = e => e && e.qual ? e.booked / e.qual : null;
+  const row = (k, label, color) => { const e = cur.io[k]; return `<div class="sd-io-row" title="${label}: นัดได้ ${fmtNum(e.booked)} จาก Qualify ${fmtNum(e.qual)}"><i style="background:${color}"></i><span>${label}</span><b>${pctTxt(rate(e))}</b><span class="sd-io-pct">${fmtNum(e.booked)}</span>${prev && prev.ready ? sdDelta(rate(e), rate(prev.io[k]), true) : ''}</div>`; };
+  return `<div class="sd-io">${row('inbound', 'Inbound', SD_C.inbound)}${row('event', 'Event', SD_C.event)}${row('outbound', 'Outbound', SD_C.outbound)}</div>`;
+}
+
 function sdMetrics(from, to){
   const fI = toIntDate(from), tI = toIntDate(to);
   const inS = d => d >= from && d <= to, inI = d => d !== null && d >= fI && d <= tI;
@@ -3017,7 +3066,8 @@ function sdMetrics(from, to){
   const receipts = docs.length;
   const speeds = docs.filter(d => d.lic > 0 && !d.old && d.days !== null && d.days >= 0).map(d => d.days).sort((a, b) => a - b);
   const medianDays = speeds.length ? speeds[Math.floor(speeds.length / 2)] : null;
-  return { leadsIn, leadsActive, qualify, leadsInIO, qualifyIO, lic, licNew: lic - licOld, licOld, rev, receipts, medianDays, speedN: speeds.length,
+  const demo = sdDemoStats(from, to);
+  return { demo, leadsIn, leadsActive, qualify, leadsInIO, qualifyIO, lic, licNew: lic - licOld, licOld, rev, receipts, medianDays, speedN: speeds.length,
            convAll: qualify ? lic / qualify : null, conv: qualify ? (lic - licOld) / qualify : null, convOld: qualify ? licOld / qualify : null };
 }
 
@@ -3030,7 +3080,7 @@ function sdIOSplit(io, pio){
 }
 // Conversion แยกลูกค้าใหม่ / ลูกค้าเก่า (บรรทัดย่อยใต้ Conversion รวม)
 function sdConvSplit(cur, prev){
-  const row = (label, color, v, pv, lic) => `<div class="sd-io-row"><i style="background:${color}"></i><span>${label} <span class="sd-io-pct">${fmtQty(lic)} License</span></span><b>${pctTxt(v)}</b><span></span>${prev ? sdDelta(v, pv, true) : ''}</div>`;
+  const row = (label, color, v, pv, lic) => `<div class="sd-io-row" title="${label}: ${fmtQty(lic)} License"><i style="background:${color}"></i><span>${label}</span><b>${pctTxt(v)}</b><span class="sd-io-pct">${fmtQty(lic)} L</span>${prev ? sdDelta(v, pv, true) : ''}</div>`;
   return `<div class="sd-io">${row('ลูกค้าใหม่', SD_C.newCust, cur.conv, prev && prev.conv, cur.licNew)}${row('ลูกค้าเก่า', SD_C.oldCust, cur.convOld, prev && prev.convOld, cur.licOld)}</div>`;
 }
 function sdDelta(cur, prev, isPct){
@@ -3086,6 +3136,9 @@ function sdBarChart(months, values, series, fmt, highlight){
 function sdLegend(items){ return `<div class="sd-legend">${items.map(i => `<span><i style="background:${i.color}"></i>${i.label}</span>`).join('')}</div>`; }
 
 function renderSuper(){
+  if(!SD_INIT_CLICK){ SD_INIT_CLICK = true; document.getElementById('sd-body').addEventListener('click', e => { const tr = e.target.closest('tr[data-sd-io]'); if(!tr) return; const k = tr.getAttribute('data-sd-io'); if(SD_IO_OPEN.has(k)) SD_IO_OPEN.delete(k); else SD_IO_OPEN.add(k); renderSuper(); }); }
+  if(typeof DEMO_STATE !== 'undefined' && DEMO_STATE.state === 'idle') loadDemoData();
+  if(QT_STATE.state === 'idle') loadQT();
   const sel = document.getElementById('sd-month');
   const ym = sel.value; if(!ym) return;
   const R = sdMonthRange(ym);
@@ -3103,11 +3156,14 @@ function renderSuper(){
     ${sdTile('ระยะเวลาปิดการขาย', cur.medianDays === null ? '–' : cur.medianDays + ' วัน', cur.medianDays !== null && prev.medianDays !== null ? `<span class="sd-delta ${cur.medianDays <= prev.medianDays ? 'up' : 'down'}">${cur.medianDays <= prev.medianDays ? '▼ เร็วขึ้น' : '▲ ช้าลง'} ${Math.abs(cur.medianDays - prev.medianDays)} วัน</span>` : '',
         cur.speedN ? `ค่ากลาง จากติดต่อครั้งแรก → ชำระเงิน (${cur.speedN} ใบ)` : 'ต้องมีใบเสร็จที่ใส่ LID', '')}
   </div>
-  <div class="sd-tiles sd-tiles3">
+  <div class="sd-tiles sd-tiles4">
     ${sdTile('Lead เข้าใหม่', fmtNum(cur.leadsIn), sdDelta(cur.leadsIn, prev.leadsIn), 'นับจากวันที่ติดต่อครั้งแรก', '', sdIOSplit(cur.leadsInIO, prev.leadsInIO))}
-    ${sdTile('Qualify Lead', fmtNum(cur.qualify), sdDelta(cur.qualify, prev.qualify), `${pctTxt(cur.leadsIn ? cur.qualify / cur.leadsIn : null)} ของ Lead เข้าใหม่ · Follow / Demo / Purchase`, 'นับจากวันที่ติดต่อครั้งแรก (เดือนล่าสุดจะเพิ่มขึ้นเรื่อยๆ ระหว่างที่ยังคัดกรอง)', sdIOSplit(cur.qualifyIO, prev.qualifyIO))}
-    ${sdTile('Conversion', pctTxt(cur.convAll), sdDelta(cur.convAll, prev.convAll, true), `License ทั้งหมด <b>${fmtQty(cur.lic)}</b> ÷ Qualify Lead <b>${fmtNum(cur.qualify)}</b>`, '', sdConvSplit(cur, prev))}
+    ${sdTile('Qualify Lead', fmtNum(cur.qualify), sdDelta(cur.qualify, prev.qualify), `${pctTxt(cur.leadsIn ? cur.qualify / cur.leadsIn : null)} ของ Lead เข้าใหม่`, 'Follow / Demo / Purchase · เดือนล่าสุดยังเพิ่มได้', sdIOSplit(cur.qualifyIO, prev.qualifyIO))}
+    ${sdTile('Qualify → นัด Demo ได้', cur.demo.ready ? pctTxt(cur.demo.all.qual ? cur.demo.all.booked / cur.demo.all.qual : null) : '…', cur.demo.ready && prev.demo.ready ? sdDelta(cur.demo.all.qual ? cur.demo.all.booked / cur.demo.all.qual : null, prev.demo.all.qual ? prev.demo.all.booked / prev.demo.all.qual : null, true) : '', cur.demo.ready ? `นัดได้ <b>${fmtNum(cur.demo.all.booked)}</b> จาก <b>${fmtNum(cur.demo.all.qual)}</b> · เสร็จแล้ว ${fmtNum(cur.demo.all.done)}` : 'กำลังโหลดนัด Demo…', 'นับนัดที่ไม่ยกเลิก', sdDemoSplit(cur.demo, prev.demo))}
+    ${sdTile('Conversion', pctTxt(cur.convAll), sdDelta(cur.convAll, prev.convAll, true), `License <b>${fmtQty(cur.lic)}</b> ÷ Qualify <b>${fmtNum(cur.qualify)}</b>`, '', sdConvSplit(cur, prev))}
   </div>`;
+
+  html += sdQtPanel(R, R.isCurrent ? `${monthLabelFull(ym)} (ถึงวันที่ ${R.dayIdx})` : monthLabelFull(ym));
 
   // ---- 2) แนวโน้ม 12 เดือน ----
   const months = []; { const [y, m] = ym.split('-').map(Number); for(let i = 11; i >= 0; i--){ const d = new Date(y, m-1-i, 1); months.push(isoOf(d).slice(0, 7)); } }
@@ -3189,28 +3245,45 @@ function renderSuper(){
       <div class="sd-bar"><i style="width:${t.lic / maxLic * 100}%"></i></div>
       <div class="sd-team-stats"><span><b>${fmtQty(t.lic)}</b> License</span><span>${live ? moneyShort(t.rev) : '–'}</span><span>Conv. ${pctTxt(t.qual ? t.lic / t.qual : null)}</span><span>${t.n ? fmtQty(t.lic / t.n) : '–'} / คน</span></div></div>`).join('');
 
-  const io = { inbound: { lead: 0, qual: 0, lic: 0, licNew: 0 }, event: { lead: 0, qual: 0, lic: 0, licNew: 0 }, outbound: { lead: 0, qual: 0, lic: 0, licNew: 0 } };
-  FIRST_CONTACT_AGG.forEach(r => { if(r.d < R.from || r.d > R.to || r.sc === undefined) return; const pr = SC_PAIRS[r.sc]; const k = pr ? getLeadIOType(pr[0], pr[1]) : 'inbound'; if(!io[k]) return; io[k].lead += r.n; if(r.s === 'Follow' || r.s === 'Demo' || r.s === 'Purchase') io[k].qual += r.n; });   // นับตามวันที่ติดต่อครั้งแรก (ตรงกับตัวเลขด้านบน)
-  const srcLic = {};
+  // ---- ช่องทาง: Lead → Qualify → นัด Demo → License (กดที่ช่องทางเพื่อแยก Source · Channel) ----
+  const dm = cur.demo;
+  const licIO = { inbound: 0, event: 0, outbound: 0 }, licPair = new Map(), srcLic = {};
   FOCUS_SUCCESS.forEach(r => {
     if(r.pd < fI || r.pd > tI) return;
     const pair = SC_PAIRS[r.sc];
     const k = pair ? getLeadIOType(pair[0], pair[1]) : 'inbound';
-    if(io[k]){ io[k].lic += r.qty; if(!r.rn) io[k].licNew += r.qty; }
+    if(k in licIO) licIO[k] += r.qty;
+    if(pair){ const pk = pair[0] + '\u0000' + pair[1]; licPair.set(pk, (licPair.get(pk) || 0) + r.qty); }
     const src = pair ? (pair[0] || '(ไม่ระบุ Source)') : '(ใบเสร็จไม่มี LID)';
     srcLic[src] = (srcLic[src] || 0) + r.qty;
   });
   const ioLabel = { inbound: 'Inbound', event: 'Event', outbound: 'Outbound' };
-  const ioHtml = ['inbound','event','outbound'].map(k => `<tr><td style="text-align:left;"><span class="type-badge t-${k}">${ioLabel[k]}</span></td><td>${fmtNum(io[k].lead)}</td><td>${pctTxt(io[k].lead ? io[k].qual / io[k].lead : null)}</td><td><b>${fmtQty(io[k].lic)}</b></td><td>${pctTxt(io[k].qual ? io[k].lic / io[k].qual : null)}</td></tr>`).join('');
+  const fRow = (e, lic) => `<td>${fmtNum(e.lead)}</td><td>${fmtNum(e.qual)} <span class="dm-th-sub">${pctTxt(e.lead ? e.qual / e.lead : null)}</span></td>
+    <td>${dm.ready ? `${fmtNum(e.booked)} <span class="dm-th-sub">ของ Qualify</span> <b>${pctTxt(e.qual ? e.booked / e.qual : null)}</b>` : '…'}</td>
+    <td>${dm.ready ? fmtNum(e.done) : '…'}</td><td><b>${fmtQty(lic)}</b></td><td>${pctTxt(e.qual ? lic / e.qual : null)}</td>`;
+  const ioHtml = ['inbound','event','outbound'].map(k => {
+    const e = dm.io[k], open = SD_IO_OPEN.has(k);
+    let s = `<tr class="sd-io-tr${open ? ' open' : ''}" data-sd-io="${k}"><td style="text-align:left;"><span class="dm-caret">${open ? '▾' : '▸'}</span> <span class="type-badge t-${k}">${ioLabel[k]}</span></td>${fRow(e, licIO[k])}</tr>`;
+    if(open){
+      const pairs = [...dm.pairs.entries()].filter(([, p]) => p.t === k).sort((a, b) => b[1].lead - a[1].lead);
+      s += pairs.map(([pk, p]) => `<tr class="sd-io-sub"><td style="text-align:left;">${escHtml(p.src || '(ไม่ระบุ Source)')} <span class="dm-th-sub">· ${escHtml(p.ch || '–')}</span></td>${fRow(p, licPair.get(pk) || 0)}</tr>`).join('')
+        || `<tr class="sd-io-sub"><td colspan="7" style="text-align:left;"><span class="dm-th-sub">ไม่มี Lead จากช่องทางนี้ในเดือนนี้</span></td></tr>`;
+    }
+    return s;
+  }).join('');
+  const totLic = licIO.inbound + licIO.event + licIO.outbound;
   const topSrc = Object.entries(srcLic).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const maxSrc = Math.max(1, ...topSrc.map(x => x[1]));
   html += `<div class="sd-grid2">
     <div class="panel"><div class="panel-head"><h2>เทียบทีม</h2><span class="hint">ไม่รวมเซลล์ที่ลาออก/ทีมที่ไม่ได้ดูแล</span></div><div class="sd-teams">${teamHtml}</div></div>
-    <div class="panel"><div class="panel-head"><h2>ช่องทางที่มาของลูกค้า</h2></div>
-      <div class="table-x"><table class="team-table"><thead><tr><th style="text-align:left;">ช่องทาง</th><th>Lead</th><th>% Qualify</th><th>License</th><th>Conversion</th></tr></thead><tbody>${ioHtml}</tbody></table></div>
-      <div class="sd-subhead">Source ที่ปิด License ได้มากสุด</div>
+    <div class="panel"><div class="panel-head"><h2>Source ที่ปิด License ได้มากสุด</h2></div>
       ${topSrc.length ? topSrc.map(([s, n]) => `<div class="sd-hbar"><span>${escHtml(s)}</span><div class="sd-bar"><i style="width:${n / maxSrc * 100}%"></i></div><b>${fmtQty(n)}</b></div>`).join('') : '<div class="dq-how">ยังไม่มี License ในเดือนนี้</div>'}
     </div>
+  </div>
+  <div class="panel"><div class="panel-head"><h2>ช่องทางที่มาของลูกค้า · Lead → Qualify → นัด Demo → License</h2><span class="hint">แตะที่ช่องทางเพื่อแยกตาม Source · Channel · Lead / Qualify / Demo นับจาก Lead ที่ติดต่อครั้งแรกในเดือนนี้</span></div>
+    <div class="table-x"><table class="team-table sd-funnel"><thead><tr><th style="text-align:left;">ช่องทาง</th><th>Lead เข้าใหม่</th><th>Qualify</th><th>นัด Demo ได้</th><th>Demo เสร็จแล้ว</th><th>License</th><th>Conversion</th></tr></thead>
+    <tbody>${ioHtml}<tr class="dm-total"><td style="text-align:left;"><b>รวม</b></td>${fRow(dm.all, totLic)}</tr></tbody></table></div>
+    <div class="dq-how" style="margin-top:6px;">นัด Demo ได้ = Lead ที่เป็น Qualify และมีนัด Demo (Online / On Site / Visit) ที่ไม่ยกเลิกในชีทนัดหมาย จับคู่ด้วย LID · License นับตามวันที่ชำระเงินในเดือนนี้ · Conversion = License ÷ Qualify</div>
   </div>`;
 
   // ---- 6) สินค้า ----
@@ -3489,6 +3562,7 @@ async function loadDemoData(){
   if(CURRENT_PAGE === 'pipeline') renderPipeline();
   if(CURRENT_PAGE === 'tracking') renderTracking();
   if(CURRENT_PAGE === 'data-check') renderDataCheck();
+  if(CURRENT_PAGE === 'super') renderSuper();
   if(typeof updateDataCheckBadge === 'function' && DATA_READY) updateDataCheckBadge();
 }
 
@@ -4267,7 +4341,7 @@ function pipeTeamOptions(){
 }
 function pipeDays(su, today){ return su ? Math.max(0, Math.round((Date.parse(today) - Date.parse(su)) / 864e5)) : null; }
 function pipeEmpty(n, t){
-  const e = { n, t, total: 0, pipe: 0, drop: 0, close: 0, over: 0, by: {}, step: [0, 0, 0, 0, 0, 0, 0], dropBy: {}, list: [] };
+  const e = { n, t, total: 0, pipe: 0, drop: 0, close: 0, over: 0, qt: 0, qtAmt: 0, qtClose: 0, qtPaid: 0, by: {}, step: [0, 0, 0, 0, 0, 0, 0], dropBy: {}, list: [] };
   PIPE_STAGES.forEach(s => { e.by[s.key] = 0; });
   return e;
 }
@@ -4277,6 +4351,7 @@ function pipeAdd(e, l){
     e.pipe++; e.by[l.stage.key]++; e.step[l.stage.step]++;
     if(l.stage.step >= 5) e.close++;
     if(l.over) e.over++;
+    if(l.qt){ e.qt++; if(l.qt.st === 'paid') e.qtPaid++; else if(l.qt.st !== 'expired') e.qtAmt += l.qt.amt; /* มูลค่ารอชำระ: ไม่นับใบที่พ้นกำหนด */ if(l.stage.step >= 5) e.qtClose++; }
   } else { e.drop++; e.dropBy[l.stLabel] = (e.dropBy[l.stLabel] || 0) + 1; }
 }
 function pipeBar(e){
@@ -4297,6 +4372,7 @@ function renderPipeline(){
     return;
   }
   if(typeof DEMO_STATE !== 'undefined' && DEMO_STATE.state === 'idle') loadDemoData();
+  if(QT_STATE.state === 'idle') loadQT();
   const today = demoToday();
   const scope = document.getElementById('pl-team').value || '__people';
   const since = document.getElementById('pl-since').value || 'all';
@@ -4316,7 +4392,8 @@ function renderPipeline(){
     const days = pipeDays(l.su, today);
     const dc = stage && PIPE_DEMO_KEYS.has(stage.key) ? pipeDemoCheck(l.lid, today) : null;
     const over = dc ? (dc.flag === 'late' || dc.flag === 'cancel') : !!(stage && stage.limit && days !== null && days > stage.limit);
-    return Object.assign({}, l, { stage, days, dc, over, stLabel: l.st.trim() || '(ไม่มีสถานะ)' });
+    const qt = stage && QT_DOCS ? qtForLid(l.lid) : null;
+    return Object.assign({}, l, { stage, days, dc, over, qt, stLabel: l.st.trim() || '(ไม่มีสถานะ)' });
   });
   const scopeLabel = document.getElementById('pl-team').selectedOptions[0]?.textContent || '';
   sub.textContent = `${scopeLabel} · Lead ${since === 'all' ? 'ทุกช่วง' : 'ที่ติดต่อมาครั้งแรกตั้งแต่ ' + fmtThaiDate(fromD)} · สถานะล่าสุดจาก API Lead (ไม่รวม Success / Refund)`;
@@ -4343,7 +4420,8 @@ function renderPipeline(){
     ${sdTile('นัดนำเสนอแล้ว (ขั้น 4)', fmtNum(s4), ' ', `Online Demo ${fmtNum(all.by.onlinedemo)} · Onsite Demo ${fmtNum(all.by.onsitedemo)}`,
       !DEMO_ROWS ? (DEMO_STATE.state === 'error' ? 'โหลดชีทนัด Demo ไม่ได้ — ยังตรวจวันนัดไม่ได้' : 'กำลังตรวจกับวันนัด Demo…')
       : (() => { const n = leads.filter(l => l.over && l.dc).length; return n ? `<span class="dm-gap">${fmtNum(n)}</span> รายเลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน (ลืมปรับสถานะ)` : `ไม่มีรายที่เลยวันนัดเกิน ${PIPE_DEMO_GRACE} วัน`; })())}
-    ${sdTile('รอปิดการขาย (ขั้น 5–6)', fmtNum(all.close), ' ', `Pending ${fmtNum(all.by.pending)} · Follow AT Sale ${fmtNum(all.by.followatsale)}`, 'Demo เสร็จแล้ว — ออกใบเสนอราคา / ติดตามยอด')}
+    ${sdTile('รอปิดการขาย (ขั้น 5–6)', fmtNum(all.close), ' ', `Pending ${fmtNum(all.by.pending)} · Follow AT Sale ${fmtNum(all.by.followatsale)}`,
+      !QT_DOCS ? (QT_STATE.state === 'error' ? 'โหลดใบเสนอราคา (QT) ไม่ได้' : 'กำลังโหลดใบเสนอราคา…') : `ออกใบเสนอราคาแล้ว <b>${fmtNum(all.qtClose)}</b> จาก ${fmtNum(all.close)} ราย · ทั้ง Pipeline มี QT ${fmtNum(all.qt)} ราย มูลค่ารอชำระ ${moneyShort(all.qtAmt)} (ไม่รวมใบพ้นกำหนด)${all.qtPaid ? ` · <span class="dm-gap">${fmtNum(all.qtPaid)}</span> รายชำระแล้วแต่สถานะยังไม่เป็น Success` : ''}`)}
   </div>`;
 
   // ---- Pipeline ตามขั้น (ทั้ง scope) + Lead ค้างเกินกำหนด ----
@@ -4371,11 +4449,12 @@ function renderPipeline(){
   ppl.forEach(e => { let g = groups[groups.length - 1]; if(!g || g.t !== e.t){ g = { t: e.t, rows: [] }; groups.push(g); } g.rows.push(e); });
   const cells = e => `<td><b>${fmtNum(e.total)}</b></td>
     <td class="pl-close">${e.close ? `<b>${fmtNum(e.close)}</b>` : '<span class="pl-zero">0</span>'}${e.over ? `<div class="dm-th-sub"><span class="dm-gap">${e.over}</span> ค้าง/ลืมปรับ</div>` : ''}</td>
+    <td>${!QT_DOCS ? '…' : e.qt ? `<b>${fmtNum(e.qt)}</b> <span class="dm-th-sub">${moneyShort(e.qtAmt)}</span>${e.qtPaid ? `<div class="dm-th-sub"><span class="dm-gap">${e.qtPaid}</span> ชำระแล้ว</div>` : ''}` : '<span class="pl-zero">0</span>'}</td>
     <td><b>${fmtNum(e.pipe)}</b> <span class="dm-th-sub">${pct(e.pipe, e.total)}</span></td>
     <td>${fmtNum(e.drop)} <span class="dm-th-sub">${pct(e.drop, e.total)}</span></td>
     <td>${pipeBar(e)}</td>
     ${PIPE_STAGES.map(s => `<td class="pl-s${s.step}">${e.by[s.key] ? fmtNum(e.by[s.key]) : '<span class="pl-zero">0</span>'}</td>`).join('')}`;
-  const NCOL = 6 + PIPE_STAGES.length;
+  const NCOL = 7 + PIPE_STAGES.length;
   let rows = `<tr class="dm-total pl-grand"><td style="text-align:left;"><b>รวมทั้งหมด</b></td>${cells(all)}</tr>`;
   groups.forEach(g => {
     rows += `<tr class="pl-team-row"><td colspan="${NCOL}">${g.t ? `<span class="team-pill sm ${teamBadgeClass(g.t)}">${escHtml(g.t)}</span>` : '<span class="team-pill sm warn">ยังไม่มีเซลดูแล</span>'} <span class="dm-th-sub">${g.rows.length} คน</span></td></tr>`;
@@ -4392,7 +4471,7 @@ function renderPipeline(){
   html += `<div class="panel"><div class="panel-head"><h2>Pipeline รายเซล (ตาม Sale ที่ดูแล)</h2><span class="hint">แตะชื่อเพื่อดูรายการ Lead ในแต่ละขั้น และสถานะที่หลุด</span></div>
     <div class="sd-legend">${PIPE_STEPS.map(s => `<span><i style="background:${s.color}"></i>${s.step} ${s.th}</span>`).join('')}<span><i style="background:${PIPE_DROP_COLOR}"></i>หลุด</span></div>
     <div class="table-x"><table class="team-table dm-table pl-table"><thead>
-      <tr><th rowspan="2" style="text-align:left;">เซล</th><th rowspan="2">Lead<br>ในมือ</th><th rowspan="2" class="pl-close">รอปิด<br><span class="dm-th-sub">ขั้น 5–6</span></th><th rowspan="2">อยู่ใน<br>Pipeline</th><th rowspan="2">หลุด</th><th rowspan="2" style="min-width:140px;">สัดส่วน</th>
+      <tr><th rowspan="2" style="text-align:left;">เซล</th><th rowspan="2">Lead<br>ในมือ</th><th rowspan="2" class="pl-close">รอปิด<br><span class="dm-th-sub">ขั้น 5–6</span></th><th rowspan="2">ออก QT แล้ว<br><span class="dm-th-sub">ราย · มูลค่ารอชำระ</span></th><th rowspan="2">อยู่ใน<br>Pipeline</th><th rowspan="2">หลุด</th><th rowspan="2" style="min-width:140px;">สัดส่วน</th>
         ${PIPE_STEPS.map(s => `<th class="dm-grp pl-g${s.step}" colspan="${PIPE_STAGES.filter(x => x.step === s.step).length}">${s.step} · ${s.th}</th>`).join('')}</tr>
       <tr>${PIPE_STAGES.map(s => `<th class="pl-s${s.step}">${escHtml(s.name)}</th>`).join('')}</tr>
     </thead><tbody>${rows}</tbody></table></div></div>`;
@@ -4411,7 +4490,7 @@ function pipeDetail(e){
     const over = list.filter(l => l.over).length;
     h += `<div class="pl-sec"><div class="pl-sec-h"><i style="background:${st.color}"></i><b>${s.step} · ${escHtml(s.name)}</b> <span class="dm-th-sub">${st.th} · ${fmtNum(list.length)} ราย${over ? ` · <span class="dm-gap">${PIPE_DEMO_KEYS.has(s.key) ? 'ลืมปรับสถานะ' : 'เกินกำหนด'} ${over}</span>` : ''} · ${PIPE_DEMO_KEYS.has(s.key) ? 'เลยวันนัดนานสุดก่อน' : 'ค้างนานสุดก่อน'}</span></div>
       <div class="dm-scroll" style="max-height:240px;"><table class="dm-list"><tbody>
-      ${list.slice(0, LIMIT).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td class="dm-ref">${escHtml(l.shop || '–')}</td><td>${l.dc ? pipeDemoCell(l) : (l.days === null ? '–' : `<span class="${l.over ? 'dm-gap' : ''}">${l.days} วัน</span><span class="dm-th-sub"> ในสถานะนี้</span>`)}</td><td><span class="dm-th-sub">เข้ามา</span> ${l.d ? fmtThaiDate(l.d) : '–'}</td><td class="dm-ref">${escHtml(l.src || '–')} · ${escHtml(l.ch || '–')}</td></tr>`).join('')}
+      ${list.slice(0, LIMIT).map(l => `<tr><td><b>${escHtml(l.lid)}</b></td><td class="dm-ref">${escHtml(l.shop || '–')}</td><td>${l.qt ? qtChip(l.qt) : (s.step >= 5 && QT_DOCS ? '<span class="dm-th-sub">ไม่พบ QT</span>' : '')}</td><td>${l.dc ? pipeDemoCell(l) : (l.days === null ? '–' : `<span class="${l.over ? 'dm-gap' : ''}">${l.days} วัน</span><span class="dm-th-sub"> ในสถานะนี้</span>`)}</td><td><span class="dm-th-sub">เข้ามา</span> ${l.d ? fmtThaiDate(l.d) : '–'}</td><td class="dm-ref">${escHtml(l.src || '–')} · ${escHtml(l.ch || '–')}</td></tr>`).join('')}
       </tbody></table></div>${list.length > LIMIT ? `<div class="dm-th-sub">แสดง ${LIMIT} จาก ${fmtNum(list.length)} ราย</div>` : ''}</div>`;
   });
   h += `<div class="pl-sec"><div class="pl-sec-h"><i style="background:${PIPE_DROP_COLOR}"></i><b>หลุดจาก Pipeline</b> <span class="dm-th-sub">${fmtNum(e.drop)} ราย</span></div>
@@ -4726,10 +4805,130 @@ function renderTracking(){
   html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall เฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
   body.innerHTML = html;
 }
+// ===== ใบเสนอราคา (QT) — ไฟล์ส่วนแบ่งการขาย แท็บ QT (ผู้ใช้เพิ่ม 19 ต.ค. 2026) =====
+// ไม่นับ: ร่าง (isDraft) / ยกเลิก (isVoid) · peakStatus "ออกครบแล้ว" = ชำระแล้ว · จับคู่ Lead จาก "LIDxxxxx" ในช่อง remark
+const QT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTgqwzq71iw6LFT7BCsOti3darM623vsX75QHM7IUQemEHcl0AszGD4an24LJfDVTR_WQkqqWWDAfrV/pubhtml?gid=1800668833&single=true';
+let QT_DOCS = null, QT_BY_LID = new Map(), QT_STATE = { state: 'idle', msg: '', maxD: '' };
+const QT_ST = {
+  paid:     { t: 'ชำระแล้ว', full: 'ออกครบแล้ว (ชำระแล้ว)', c: '#2F7D4F' },
+  accepted: { t: 'ยอมรับแล้ว', full: 'ยอมรับแล้ว · รอชำระ', c: '#E0A800' },
+  open:     { t: 'รอตอบรับ', full: 'ส่งแล้ว · รอลูกค้าตอบรับ', c: '#1D7FA3' },
+  expired:  { t: 'พ้นกำหนด', full: 'พ้นกำหนด (เลยวันครบกำหนด)', c: '#B3402A' },
+};
+const QT_ORDER = ['paid', 'accepted', 'open', 'expired'];
+function qtStatusKey(s){
+  s = String(s || '').trim();
+  if(s === 'ออกครบแล้ว') return 'paid';
+  if(s === 'ยอมรับแล้ว') return 'accepted';
+  if(s === 'พ้นกำหนด') return 'expired';
+  if(s === 'ร่าง') return 'draft';
+  return 'open';
+}
+async function loadQT(){
+  QT_STATE.state = 'loading';
+  try{
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 30000);
+    let text;
+    try{
+      const res = await fetch(toCsvUrl(QT_SHEET_URL), { cache: 'no-store', signal: ctrl.signal });
+      if(!res.ok) throw new Error('ชีท QT ตอบกลับ ' + res.status);
+      text = await res.text();
+    }finally{ clearTimeout(timer); }
+    if(/^\s*<(!doctype|html)/i.test(text)) throw new Error('ชีท QT ยังไม่ได้เปิดแชร์แบบสาธารณะ');
+    const rows = parseCSV(text);
+    const H = (rows[0] || []).map(h => String(h).trim().toLowerCase());
+    const ix = k => H.indexOf(k.toLowerCase());
+    const docs = [];
+    rows.slice(1).forEach(r => {
+      const g = k => { const i = ix(k); return i >= 0 ? String(r[i] == null ? '' : r[i]).trim() : ''; };
+      const code = g('code'); if(!code) return;
+      if(g('isVoid') === '1' || g('isDraft') === '1') return;
+      const st = qtStatusKey(g('peakStatus')); if(st === 'draft') return;
+      const d = toISODate(g('issuedDate').replace(/\.0$/, '')); if(!d) return;
+      const lid = normLid(g('remark') + ' ' + g('reference'));
+      const tags = g('salesTag').split(',').map(t => t.trim()).filter(Boolean);
+      docs.push({ code, d, amt: toNum(g('preTaxAmount')), st, peak: g('peakStatus'), lid, tag: tags.find(t => /^sale\s*\//i.test(t)) || tags[0] || '', cust: g('contactCode') || g('contactName') || code });
+    });
+    const byLid = new Map();
+    docs.forEach(q => { if(q.lid === null) return; (byLid.get(q.lid) || byLid.set(q.lid, []).get(q.lid)).push(q); });
+    byLid.forEach(list => list.sort((a, b) => a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
+    QT_DOCS = docs; QT_BY_LID = byLid;
+    QT_STATE = { state: 'ok', msg: '', maxD: docs.reduce((m, q) => q.d > m ? q.d : m, '') };
+  }catch(e){
+    QT_STATE = { state: 'error', msg: e.name === 'AbortError' ? 'ชีท QT ตอบช้าเกิน 30 วินาที' : (e.message || String(e)), maxD: '' };
+  }
+  if(CURRENT_PAGE === 'super') renderSuper();
+  if(CURRENT_PAGE === 'pipeline') renderPipeline();
+}
+// QT ล่าสุดของ Lead (ตาม LID)
+function qtForLid(lid){ const n = normLid(lid); return n === null ? null : (QT_BY_LID.get(n) || [])[0] || null; }
+// ชื่อเซลจาก Tag ในใบเสนอราคา (MSTR → alias → ชื่อเล่นในแดชบอร์ด → เซลที่ดูแล Lead)
+let QT_LEAD_SALE = null;
+function qtSaleName(q){
+  const r = resolveSaleName({ psn: '', saleTag: q.tag, tags: [q.tag] }, null, SALES_LIVE ? SALES_LIVE.mstr : null);
+  if(r.how === 'mstr' || r.how === 'alias') return r.name;
+  const nick = String(q.tag).split('/').pop().trim().toLowerCase();
+  if(nick){
+    for(const v of SALES_PHONES.values()) if(String(v.nick).toLowerCase() === nick && v.name) return v.name;
+    const p = (TEAM_PEOPLE || []).find(x => String(x.tag).split('/').pop().trim().toLowerCase() === nick);
+    if(p) return p.name;
+    if(SALES_NICK_NAME[nick]) return SALES_NICK_NAME[nick];
+  }
+  if(!QT_LEAD_SALE){ QT_LEAD_SALE = new Map(); CALL_LEADS.forEach(l => { const n = normLid(l.lid); if(n !== null && l.sale) QT_LEAD_SALE.set(n, l.sale); }); }
+  return (q.lid !== null && QT_LEAD_SALE.get(q.lid)) || (q.tag ? q.tag : '(ไม่ระบุเซล)');
+}
+function qtChip(q){
+  if(!q) return '';
+  const s = QT_ST[q.st];
+  return `<span class="qt-chip" style="border-color:${s.c};color:${s.c}" title="${escHtml(q.code + ' · ' + fmtThaiDate(q.d) + ' · ' + s.full + ' · ' + money(q.amt) + ' (ก่อน VAT)')}">QT ${escHtml(s.t)} · ${moneyShort(q.amt)}</span>`;
+}
+
+// ---- Super Dashboard: ใบเสนอราคาในเดือนที่เลือก ----
+function sdQtStats(from, to){
+  const z = () => ({ n: 0, amt: 0, val: 0 });   // val = มูลค่าเฉพาะใบที่ยังไม่พ้นกำหนด
+  const o = { all: z(), st: { paid: z(), accepted: z(), open: z(), expired: z() }, per: new Map(), withLid: 0, cust: new Set() };
+  (QT_DOCS || []).forEach(q => {
+    if(q.d < from || q.d > to) return;
+    const v = q.st === 'expired' ? 0 : q.amt;
+    o.all.n++; o.all.amt += q.amt; o.all.val += v; o.st[q.st].n++; o.st[q.st].amt += q.amt; o.cust.add(q.cust);
+    if(q.lid !== null) o.withLid++;
+    const name = qtSaleName(q);
+    let e = o.per.get(name); if(!e){ e = { name, all: z(), st: { paid: z(), accepted: z(), open: z(), expired: z() } }; o.per.set(name, e); }
+    e.all.n++; e.all.amt += q.amt; e.all.val += v; e.st[q.st].n++; e.st[q.st].amt += q.amt;
+  });
+  return o;
+}
+function sdQtPanel(R, label){
+  if(!QT_DOCS){
+    return `<div class="panel"><div class="panel-head"><h2>ใบเสนอราคา (QT)</h2></div><div class="dq-how">${QT_STATE.state === 'error' ? 'โหลดชีท QT ไม่ได้ — ' + escHtml(QT_STATE.msg) : 'กำลังโหลดใบเสนอราคา…'}</div></div>`;
+  }
+  const c = sdQtStats(R.from, R.to), p = sdQtStats(R.pFrom, R.pTo);
+  const rate = x => x.all.n ? x.st.paid.n / x.all.n : null;
+  const box = (k) => { const s = QT_ST[k], v = c.st[k]; return `<div class="qt-box"><div class="qt-box-l"><i style="background:${s.c}"></i>${s.full}</div><div class="qt-box-v">${fmtNum(v.n)} <span>ใบ</span></div><div class="qt-box-a">${money(v.amt)}</div></div>`; };
+  const bar = QT_ORDER.map(k => c.st[k].amt ? `<i style="width:${(c.st[k].amt / Math.max(1, c.all.amt) * 100).toFixed(2)}%;background:${QT_ST[k].c}" title="${QT_ST[k].full} ${money(c.st[k].amt)}"></i>` : '').join('');
+  const per = [...c.per.values()].sort((a, b) => b.all.val - a.all.val || b.all.n - a.all.n);
+  const rows = per.map(e => `<tr><td style="text-align:left;">${saleLabelHtml(e.name)}</td><td>${fmtNum(e.all.n)}</td><td>${money(e.all.val)}</td>
+      <td><b style="color:${QT_ST.paid.c}">${fmtNum(e.st.paid.n)}</b> <span class="dm-th-sub">${moneyShort(e.st.paid.amt)}</span></td>
+      <td>${fmtNum(e.st.accepted.n)} <span class="dm-th-sub">${moneyShort(e.st.accepted.amt)}</span></td>
+      <td>${fmtNum(e.st.open.n)} <span class="dm-th-sub">${moneyShort(e.st.open.amt)}</span></td>
+      <td>${fmtNum(e.st.expired.n)} <span class="dm-th-sub">${moneyShort(e.st.expired.amt)}</span></td>
+      <td>${pctTxt(rate(e))}</td></tr>`).join('');
+  return `<div class="panel"><div class="panel-head"><h2>ใบเสนอราคา (QT) · ${label}</h2><span class="hint">ตามวันที่ออกใบเสนอราคา · ไม่รวมร่าง / ยกเลิก · ข้อมูลถึง ${fmtThaiDate(QT_STATE.maxD)}</span></div>
+    <div class="qt-head">
+      <div><div class="sd-tile-label">ออกใบเสนอราคา</div><div class="sd-tile-value">${fmtNum(c.all.n)} <span class="qt-unit">ใบ</span></div><div class="sd-tile-delta">${sdDelta(c.all.n, p.all.n)}</div><div class="dm-th-sub">ลูกค้า ${fmtNum(c.cust.size)} ราย</div></div>
+      <div><div class="sd-tile-label">มูลค่ารวม (ก่อน VAT)</div><div class="sd-tile-value">${moneyShort(c.all.val)}</div><div class="sd-tile-delta">${sdDelta(c.all.val, p.all.val)}</div><div class="dm-th-sub">ไม่รวมใบที่พ้นกำหนด (${moneyShort(c.st.expired.amt)})</div></div>
+      <div><div class="sd-tile-label">ชำระแล้ว (ออกครบแล้ว)</div><div class="sd-tile-value">${pctTxt(rate(c))}</div><div class="sd-tile-delta">${sdDelta(rate(c), rate(p), true)}</div><div class="dm-th-sub">${fmtNum(c.st.paid.n)} ใบ · ${moneyShort(c.st.paid.amt)}</div></div>
+    </div>
+    <div class="qt-bar">${bar}</div>
+    <div class="qt-boxes">${QT_ORDER.map(box).join('')}</div>
+    ${per.length ? `<div class="table-x" style="margin-top:12px;"><table class="team-table qt-table"><thead><tr><th style="text-align:left;">เซล (Tag ในใบเสนอราคา)</th><th>ออก</th><th>มูลค่า<div class="dm-th-sub">ไม่รวมพ้นกำหนด</div></th><th>ชำระแล้ว</th><th>ยอมรับ รอชำระ</th><th>รอตอบรับ</th><th>พ้นกำหนด</th><th>% ชำระ</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="dq-how">ยังไม่มีใบเสนอราคาในเดือนนี้</div>'}
+    <div class="dq-how" style="margin-top:6px;">ใส่ LID ไว้ในหมายเหตุ ${fmtNum(c.withLid)} จาก ${fmtNum(c.all.n)} ใบ (ใช้ผูกกับ Lead ในหน้า Pipeline) · สถานะตามช่อง peakStatus ใน PEAK</div>
+  </div>`;
+}
 switchPage(CURRENT_PAGE);
 loadData();
 </script>
 
 </body>
 </html>
-<!-- build: 2026-10-16 redeploy -->
+<!-- build: v33 2026-10-19 QT value excludes expired -->
