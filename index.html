@@ -1525,6 +1525,7 @@ function buildLeadModel(apiRows){
 
   const callLeads = [];
   const pipeLeads = [];
+  const allLeadPhones = new Set();
   apiRows.forEach(r => {
     const src = strOf(r['Source']), ch = strOf(r['Channel']), camp = strOf(r['Campaign']);
     const dLast = d10(r['วันที่ลูกค้าติดต่อมาครั้งล่าสุด']);
@@ -1538,8 +1539,9 @@ function buildLeadModel(apiRows){
     pairCounts.set(pk, (pairCounts.get(pk) || 0) + 1);
     total++;
     const lidNum = normLid(r['Lead ID']);
+    const p1 = normPhone(r['เบอร์โทรศัทพ์'] || r['เบอร์โทรศัพท์']), p2 = normPhone(r['เบอร์โทรศัทพ์สำรอง'] || r['เบอร์โทรศัพท์สำรอง']);
+    if(p1) allLeadPhones.add(p1); if(p2) allLeadPhones.add(p2);   // เบอร์ของ Lead ทุกตัว (ทุกปี) — ใช้นับ "สายที่โทรหา Lead"
     if(dFirst >= '2025-07-01'){
-      const p1 = normPhone(r['เบอร์โทรศัทพ์'] || r['เบอร์โทรศัพท์']), p2 = normPhone(r['เบอร์โทรศัทพ์สำรอง'] || r['เบอร์โทรศัพท์สำรอง']);
       callLeads.push({ lid: strOf(r['Lead ID']), p1, p2: p2 !== p1 ? p2 : '', d: dFirst, sale: h ? saleName : '', st: status, q, src, ch });
     }
     if(!pipeExcluded(status)) pipeLeads.push({ lid: strOf(r['Lead ID']), sale: h ? saleName : '', st: status, su: d10(r['วันที่ปรับสถานะการขาย']), d: dFirst, src, ch, shop: strOf(r['ชื่อร้านค้า']).trim() });
@@ -1566,7 +1568,7 @@ function buildLeadModel(apiRows){
   });
 
   finalizeModel({ sales, getSale, getPair, groupIdx, groupNames, groupSc, pairs, statuses,
-    minD, maxD, callLeads, pipeLeads, lidAgg: [...lidAgg.values()], firstAgg: [...firstAgg.values()], funnel: [...funnelAgg.values()],
+    minD, maxD, callLeads, pipeLeads, allLeadPhones, lidAgg: [...lidAgg.values()], firstAgg: [...firstAgg.values()], funnel: [...funnelAgg.values()],
     scAgg: [...scAgg.values()], qns, gLeadAgg: [...gLeadAgg.values()], gDetail: [...gDetailAgg.values()],
     focusLeads, pairCounts, saleCounts, total, leadIndex });
 }
@@ -1649,6 +1651,7 @@ function finalizeModel(m){
   CALL_LEADS = m.callLeads || [];
   PIPE_LEADS = m.pipeLeads || [];
   LEAD_INDEX = m.leadIndex || new Map();
+  ALL_LEAD_PHONES = m.allLeadPhones || new Set(CALL_LEADS.flatMap(l => [l.p1, l.p2]).filter(Boolean));
   FUNNEL4D = m.funnel.slice().sort(byDateDesc);
   SC_AGG = m.scAgg.slice().sort(byDateDesc);
   QUALIFY_NO_SALE = m.qns.slice().sort(byDateDesc);
@@ -4007,7 +4010,7 @@ function renderCalls(){
 
   // ---- Lead ที่ยังไม่เคยโทร (ใหม่สุดก่อน) + ใครโทรมากที่สุด ----
   const nv = never.filter(l => !l.early).sort((a, b) => a.d < b.d ? 1 : -1);
-  const leadPhones = new Set(CALL_LEADS.flatMap(l => [l.p1, l.p2]).filter(Boolean));
+  const leadPhones = ALL_LEAD_PHONES;
   CALL_ROWS.forEach(c => { if(c.d < from || c.d > to || c.dir === 'I') return; if(leadPhones.has(c.remote)) byCaller.get(c.local).leadCalls++; });
   const callers = [...byCaller.values()].sort((a, b) => (b.o + b.i) - (a.o + a.i));
   html += `<div class="sd-grid2"><div class="panel"><div class="panel-head"><h2>Lead ที่ยังไม่เคยโทร</h2><span class="hint">${nv.length} Lead · ใหม่สุดก่อน</span></div>
@@ -4064,7 +4067,7 @@ function callLeadList(list, showSale){
 const CALL_DAY_TARGET = 50;   // เป้าโทรหา Lead ต่อคนต่อวัน (ผู้ใช้กำหนด 16 ต.ค. 2026)
 // ตารางการโทรต่อวัน — นับเฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead (เบอร์หลัก/สำรองใน API Lead) ตามวันที่โทร
 function callsPerDayPanel(from, to, inScope, scope){
-  const leadPhones = new Set(CALL_LEADS.flatMap(l => [l.p1, l.p2]).filter(Boolean));
+  const leadPhones = ALL_LEAD_PHONES;
   const days = [];
   for(let d = from; d && d <= to && days.length < 92; d = demoAddDays(d, 1)) days.push(d);
   const per = new Map(), dayTot = {};
@@ -4264,6 +4267,7 @@ if(window.matchMedia && window.matchMedia('(hover: none)').matches){
 }
 // ===== Pipeline Sale — Lead ในมือเซลแต่ละคน แยกตามสถานะการขาย (ผู้ใช้กำหนด 16 ต.ค. 2026) =====
 // สถานะที่อยู่ใน Pipeline (เรียงตามขั้น) · Success / Refund ไม่นำมาคิด · สถานะอื่นทั้งหมด = เซลปล่อยหลุด
+let ALL_LEAD_PHONES = new Set();   // เบอร์ของ Lead ทุกตัวใน API (ไม่จำกัดปี) — นับสายที่โทรหา Lead (แก้ 19 ต.ค. 2026: เดิมนับเฉพาะ Lead ที่ติดต่อมาตั้งแต่ ก.ค. 2025)
 let LEAD_INDEX = new Map();   // เลข LID → {st, sale, …} (สร้างตอนอ่าน API Lead) — ใช้ในหน้า Forecast T1
 let PIPE_LEADS = [];   // [{lid, sale, st, su, d, src, ch, shop}] — ไม่รวม Success / Refund (สร้างตอนอ่าน API Lead)
 let PIPE_INIT = false;
@@ -4618,7 +4622,7 @@ function trkDayOptions(mon, today){
 function trkLeadCalls(){
   const out = new Map();   // ชื่อเซล → {date: สาย}
   if(!CALL_ROWS) return out;
-  const leadPhones = new Set(CALL_LEADS.flatMap(l => [l.p1, l.p2]).filter(Boolean));
+  const leadPhones = ALL_LEAD_PHONES;
   CALL_ROWS.forEach(c => {
     if(c.dir === 'I' || !leadPhones.has(c.remote)) return;
     const s = SALES_PHONES.get(c.local); if(!s || !s.name) return;
@@ -5244,4 +5248,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v37 2026-10-19 Tracking 1 Demo = 25 calls -->
+<!-- build: v38 2026-10-19 lead calls = all lead phones -->
