@@ -681,6 +681,9 @@
     <button class="nav-item" id="nav-tracking">
       Tracking ประจำวัน
     </button>
+    <button class="nav-item" id="nav-forecast">
+      Forecast T1
+    </button>
     <button class="nav-item active" id="nav-marketing">
       Marketing
     </button>
@@ -795,6 +798,19 @@
       </div>
     </div>
     <div id="tk-body"></div>
+  </div>
+
+  <div class="page" id="page-forecast">
+    <div class="page-head sd-head">
+      <div>
+        <h1>Forecast T1 · Weekly Must-WON</h1>
+        <p id="fc-sub">กำลังโหลดข้อมูล…</p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="filter-group"><label>สัปดาห์ (ตามวันที่ในชีท Sale 4 Matrix)</label><select id="fc-week"></select></div>
+      </div>
+    </div>
+    <div id="fc-body"></div>
   </div>
 
   <div class="page visible" id="page-marketing">
@@ -1343,7 +1359,7 @@ function updateSampleNote(){
 
 <script>
 // ---- Page navigation ----
-const PAGE_NAMES = ['super', 'demo', 'calls', 'pipeline', 'tracking', 'marketing', 'sales', 'focus', 'source-report', 'team-setup', 'data-check', 'settings'];
+const PAGE_NAMES = ['super', 'demo', 'calls', 'pipeline', 'tracking', 'forecast', 'marketing', 'sales', 'focus', 'source-report', 'team-setup', 'data-check', 'settings'];
 let CURRENT_PAGE = 'super';
 let DATA_READY = false;
 PAGE_NAMES.forEach(n => document.getElementById('nav-' + n).addEventListener('click', () => switchPage(n)));
@@ -1369,6 +1385,7 @@ function switchPage(name){
   if(name === 'calls'){ renderCalls(); }
   if(name === 'pipeline'){ renderPipeline(); }
   if(name === 'tracking'){ renderTracking(); }
+  if(name === 'forecast'){ renderForecast(); }
 }
 
 // ---- Marketing / Section data (shared across pages) ----
@@ -1526,7 +1543,7 @@ function buildLeadModel(apiRows){
       callLeads.push({ lid: strOf(r['Lead ID']), p1, p2: p2 !== p1 ? p2 : '', d: dFirst, sale: h ? saleName : '', st: status, q, src, ch });
     }
     if(!pipeExcluded(status)) pipeLeads.push({ lid: strOf(r['Lead ID']), sale: h ? saleName : '', st: status, su: d10(r['วันที่ปรับสถานะการขาย']), d: dFirst, src, ch, shop: strOf(r['ชื่อร้านค้า']).trim() });
-    if(lidNum !== null) leadIndex.set(lidNum, { src, ch, camp, dLast: dLast || null, su: dInt(r['วันที่ปรับสถานะการขาย']), fc: dInt(dFirst), sale: h ? saleName : '' });
+    if(lidNum !== null) leadIndex.set(lidNum, { st: status, src, ch, camp, dLast: dLast || null, su: dInt(r['วันที่ปรับสถานะการขาย']), fc: dInt(dFirst), sale: h ? saleName : '' });
 
     if(dFirst) bump(firstAgg, dFirst + '|' + q + '|' + pk, {d: dFirst, s: q, sc: getPair(src, ch)});
     if(!dLast) return;
@@ -1631,6 +1648,7 @@ function finalizeModel(m){
   FIRST_CONTACT_AGG = m.firstAgg.slice().sort(byDateDesc);
   CALL_LEADS = m.callLeads || [];
   PIPE_LEADS = m.pipeLeads || [];
+  LEAD_INDEX = m.leadIndex || new Map();
   FUNNEL4D = m.funnel.slice().sort(byDateDesc);
   SC_AGG = m.scAgg.slice().sort(byDateDesc);
   QUALIFY_NO_SALE = m.qns.slice().sort(byDateDesc);
@@ -4246,6 +4264,7 @@ if(window.matchMedia && window.matchMedia('(hover: none)').matches){
 }
 // ===== Pipeline Sale — Lead ในมือเซลแต่ละคน แยกตามสถานะการขาย (ผู้ใช้กำหนด 16 ต.ค. 2026) =====
 // สถานะที่อยู่ใน Pipeline (เรียงตามขั้น) · Success / Refund ไม่นำมาคิด · สถานะอื่นทั้งหมด = เซลปล่อยหลุด
+let LEAD_INDEX = new Map();   // เลข LID → {st, sale, …} (สร้างตอนอ่าน API Lead) — ใช้ในหน้า Forecast T1
 let PIPE_LEADS = [];   // [{lid, sale, st, su, d, src, ch, shop}] — ไม่รวม Success / Refund (สร้างตอนอ่าน API Lead)
 let PIPE_INIT = false;
 let PIPE_OPEN = null;
@@ -4859,6 +4878,7 @@ async function loadQT(){
   }
   if(CURRENT_PAGE === 'super') renderSuper();
   if(CURRENT_PAGE === 'pipeline') renderPipeline();
+  if(CURRENT_PAGE === 'forecast') renderForecast();
 }
 // QT ล่าสุดของ Lead (ตาม LID)
 function qtForLid(lid){ const n = normLid(lid); return n === null ? null : (QT_BY_LID.get(n) || [])[0] || null; }
@@ -4925,10 +4945,282 @@ function sdQtPanel(R, label){
     <div class="dq-how" style="margin-top:6px;">ใส่ LID ไว้ในหมายเหตุ ${fmtNum(c.withLid)} จาก ${fmtNum(c.all.n)} ใบ (ใช้ผูกกับ Lead ในหน้า Pipeline) · สถานะตามช่อง peakStatus ใน PEAK · ยอดเงินที่รับจริงดูที่ยอดขาย (RT)</div>
   </div>`;
 }
+
+// ===== Forecast T1 — "Sale 4 Matrix" ของเซลแต่ละคน (ผู้ใช้เพิ่ม 19 ต.ค. 2026) =====
+// แท็บชื่อเซล (ชื่อเล่น) = Forecast ของสัปดาห์ปัจจุบัน แบ่ง 4 Tier · หน้านี้ Focus Tier 1 (Weekly Must-WON) เป้า ≥ 3 ร้าน/สัปดาห์
+// ผลลัพธ์แสดง 2 ฝั่ง: ที่เซลกรอกในชีท + ที่ระบบตรวจเจอ (ใบเสร็จ RT ของ LID นั้นในช่วงสัปดาห์ · สถานะ Lead ปัจจุบัน · QT ล่าสุด)
+// ประวัติย้อนหลัง: Apps Script "Forecast Log" เก็บลงแท็บ Forecast Log ในชีท INTD ทุกวัน ~23:00 → อ่านผ่าน Web app (?action=forecastLog)
+const FC_BOOK_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSrkPt2t9Nh-oXDQ4gEGTeOoitFpPIxI73rbeZr8I8yc_tnBUfB7zuO5MYhBrwtpCM7JeelDNOMfrI5/pub';
+const FC_SKIP = new Set(['Ex', 'Guidline Checklist', 'Unsuccess', 'API LID', 'MSTR']);
+// รายชื่อแท็บสำรอง (ใช้เมื่ออ่านรายชื่อแท็บจากหน้า Publish ไม่ได้) — ชื่อแท็บ: gid
+const FC_TABS_FALLBACK = { Mind: 70389174, Arm: 295554141, Bow: 1826174230, Cream: 1869813842, Bam: 281960237, Teen: 1461870390, Trang: 1678295726, Noey: 12393556, Prang: 1632878138, Earth: 1003876735, Milk: 1120961036, Ice: 1441531945, Phing: 283605492, Cartoon: 915297932, Pinploy: 2069372809, Kaew: 107879653 };
+const FC_T1_TARGET = 3;          // T1 ขั้นต่ำ 3 ร้าน/สัปดาห์ · Lead Team: "Tier 1 ปิดได้ตามเป้าหมาย 3 ร้าน"
+const FC_LATE_DAYS = 14;         // ใบเสร็จที่ออกหลังจบสัปดาห์ไม่เกิน 14 วัน = "ปิดได้หลังสัปดาห์"
+const FC_HISTORY_WEEKS = 8;
+let FC_LIVE = null, FC_LOG = null, FC_STATE = { live: 'idle', log: 'idle', msg: '' }, FC_INIT = false, FC_OPEN = new Set();
+const FC_MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function fcIso(v){
+  const s = String(v || '').trim();
+  let m = s.match(/^(\d{1,2})[-\s\/]([A-Za-z]{3})[A-Za-z]*[-\s\/](\d{4})$/);
+  if(m && FC_MON[m[2].toLowerCase()]) return `${m[3]}-${String(FC_MON[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[0];
+  return toISODate(s) || '';
+}
+// อ่าน 1 แท็บ (แถว CSV) → { from, to, sale, team, items:[{tier, lid, shop, prod, qty, amt, res, det}] } — ตรงกับ fcParse_ ใน Apps Script
+function fcParseTab(rows){
+  const cell = (r, c) => String(((rows[r] || [])[c]) == null ? '' : rows[r][c]).trim();
+  const info = { team: cell(1, 3), sale: cell(2, 3), from: fcIso(cell(1, 9)), to: fcIso(cell(2, 9)), items: [] };
+  const byKey = new Map(), detail = new Map();
+  for(let r = 0; r < rows.length; r++){
+    for(const c of [0, 7]){
+      const v = cell(r, c);
+      let m = v.match(/^Tier\s*([1-4])$/i);
+      if(m){
+        const tier = +m[1];
+        for(let i = r + 2; i < rows.length; i++){
+          const a = cell(i, c);
+          if(/^สรุปผล|^Tier\s*\d/i.test(a)) break;
+          if(a === 'LID' || (!a && !cell(i, c + 1))) continue;
+          const lid = (a.toUpperCase().match(/LID\s*\d+/) || [''])[0].replace(/\s/g, '');
+          const key = tier + '|' + (lid || cell(i, c + 1));
+          let it = byKey.get(key);
+          if(!it){ it = { tier, lid, shop: cell(i, c + 1), prod: cell(i, c + 2), qty: 0, amt: 0, res: '', det: '', rows: 0 }; byKey.set(key, it); }
+          it.qty += toNum(cell(i, c + 3)); it.amt += toNum(cell(i, c + 4)); it.rows++;
+          if(!it.res) it.res = cell(i, c + 5);
+        }
+      }
+      m = v.match(/^สรุปผล Tier\s*([1-4])/);
+      if(m){
+        const tier = +m[1];
+        for(let i = r + 2; i < rows.length; i++){
+          const a = cell(i, c);
+          if(cell(i, 1).indexOf('License') === 0) break;
+          if(!a) continue;
+          if(!/LID\s*\d/i.test(a)) break;
+          detail.set(tier + '|' + a.toUpperCase().replace(/\s/g, ''), { res: cell(i, c + 2), det: cell(i, c + 3) });
+        }
+      }
+    }
+  }
+  byKey.forEach(it => { const d = detail.get(it.tier + '|' + it.lid); if(d){ if(d.res) it.res = d.res; it.det = d.det; } info.items.push(it); });
+  return info;
+}
+async function fcFetchText(url, ms){
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 30000);
+  try{ const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal }); if(!r.ok) throw new Error('ตอบกลับ ' + r.status); return await r.text(); }
+  finally{ clearTimeout(t); }
+}
+async function fcTabs(){
+  try{
+    const html = await fcFetchText(FC_BOOK_URL + 'html', 20000);
+    const out = []; const re = /name:\s*"([^"]*)"[^}]*?gid:\s*"(\d+)"/g; let m;
+    while((m = re.exec(html))) if(!FC_SKIP.has(m[1])) out.push({ tab: m[1], gid: m[2] });
+    if(out.length) return out;
+  }catch(e){}
+  return Object.entries(FC_TABS_FALLBACK).map(([tab, gid]) => ({ tab, gid: String(gid) }));
+}
+async function loadForecastLive(){
+  FC_STATE.live = 'loading';
+  try{
+    const tabs = await fcTabs();
+    const res = await Promise.all(tabs.map(async t => {
+      try{
+        const txt = await fcFetchText(FC_BOOK_URL + '?single=true&output=csv&gid=' + t.gid);
+        if(/^\s*<(!doctype|html)/i.test(txt)) return null;
+        const p = fcParseTab(parseCSV(txt)); p.tab = t.tab; return p;
+      }catch(e){ return null; }
+    }));
+    FC_LIVE = res.filter(Boolean);
+    FC_STATE.live = FC_LIVE.length ? 'ok' : 'error';
+    if(!FC_LIVE.length) FC_STATE.msg = 'อ่านไฟล์ Sale 4 Matrix ไม่ได้ (ตรวจว่ายังเปิด Publish อยู่)';
+  }catch(e){ FC_LIVE = []; FC_STATE.live = 'error'; FC_STATE.msg = e.message || String(e); }
+  if(CURRENT_PAGE === 'forecast') renderForecast();
+}
+async function loadForecastLog(){
+  if(!LEAVE_API_URL){ FC_LOG = []; FC_STATE.log = 'off'; return; }
+  FC_STATE.log = 'loading';
+  try{
+    const j = JSON.parse(await fcFetchText(LEAVE_API_URL + '?action=forecastLog', 30000));
+    FC_LOG = Array.isArray(j.rows) ? j.rows : []; FC_STATE.log = j.rows ? 'ok' : 'nolog';
+  }catch(e){ FC_LOG = []; FC_STATE.log = 'error'; }
+  if(CURRENT_PAGE === 'forecast') renderForecast();
+}
+// รวมข้อมูล: ประวัติจาก Log + สัปดาห์ปัจจุบันจากชีทสด (สด แทนที่ Log ของสัปดาห์+เซลเดียวกัน) → Map(สัปดาห์ → Map(แท็บ → {sale, team, from, to, items}))
+function fcWeeks(){
+  const W = new Map();
+  const put = (from, to, tab, sale, team) => {
+    if(!W.has(from)) W.set(from, new Map());
+    const m = W.get(from);
+    if(!m.has(tab)) m.set(tab, { tab, sale, team, from, to, items: [] });
+    return m.get(tab);
+  };
+  const liveKey = new Set((FC_LIVE || []).filter(p => p.from).map(p => p.from + '|' + p.tab));
+  (FC_LOG || []).forEach(r => {
+    if(!r.from || liveKey.has(r.from + '|' + r.tab)) return;
+    const e = put(r.from, r.to, r.tab, r.sale, r.team);
+    if(r.tier) e.items.push({ tier: r.tier, lid: r.lid, shop: r.shop, prod: r.prod, qty: r.qty, amt: r.amt, res: r.res, det: r.det });
+  });
+  (FC_LIVE || []).forEach(p => { if(!p.from) return; const e = put(p.from, p.to, p.tab, p.sale, p.team); e.items = p.items; e.live = true; });
+  return W;
+}
+let FC_RT_BY_LID = null, FC_RT_SRC = null;
+function fcRtByLid(){
+  const docs = SALES_LIVE && SALES_LIVE.docs;
+  if(FC_RT_SRC === docs && FC_RT_BY_LID) return FC_RT_BY_LID;
+  FC_RT_BY_LID = new Map(); FC_RT_SRC = docs;
+  (docs || []).forEach(d => { if(d.lid == null) return; (FC_RT_BY_LID.get(d.lid) || FC_RT_BY_LID.set(d.lid, []).get(d.lid)).push(d); });
+  return FC_RT_BY_LID;
+}
+const FC_ST = {
+  won:   { t: 'ปิดได้', c: 'ok' },
+  late:  { t: 'ปิดได้หลังสัปดาห์', c: 'wait' },
+  claim: { t: 'เซลแจ้ง Won · ไม่พบใบเสร็จ', c: 'risk' },
+  open:  { t: 'รอผล', c: '' },
+  miss:  { t: 'ไม่ปิด', c: 'bad' },
+  nolid: { t: 'ไม่มี LID ตรวจไม่ได้', c: '' },
+};
+function fcIsWon(s){ return /\bwon\b|ปิดได้|ปิดการขาย|success|สำเร็จ/i.test(String(s || '')); }
+// ตรวจผล 1 ร้าน
+function fcCheck(it, from, to, today){
+  const n = normLid(it.lid);
+  const o = { n, rtIn: [], rtLate: null, lead: n !== null && LEAD_INDEX ? LEAD_INDEX.get(n) : null, qt: n !== null && QT_DOCS ? qtForLid(it.lid) : null, saleWon: fcIsWon(it.res) };
+  if(n !== null){
+    const lateEnd = demoAddDays(to || from, FC_LATE_DAYS);
+    (fcRtByLid().get(n) || []).forEach(d => {
+      if(d.pd >= from && d.pd <= (to || from)) o.rtIn.push(d);
+      else if(d.pd > (to || from) && d.pd <= lateEnd && (!o.rtLate || d.pd < o.rtLate.pd)) o.rtLate = d;
+    });
+  }
+  o.rtAmt = o.rtIn.reduce((a, d) => a + d.preTax, 0);
+  const over = today > (to || from);
+  o.st = n === null ? (o.saleWon ? 'claim' : over ? 'miss' : 'nolid')
+    : o.rtIn.length ? 'won'
+    : o.saleWon ? 'claim'
+    : o.rtLate ? 'late'
+    : over ? 'miss' : 'open';
+  o.mismatch = (o.st === 'won' && !o.saleWon) || o.st === 'claim';
+  return o;
+}
+function fcSaleStats(e, today){
+  const t1 = e.items.filter(it => it.tier === 1);
+  const rows = t1.map(it => ({ it, o: fcCheck(it, e.from, e.to, today) }));
+  const s = { e, rows, n: rows.length, amt: 0, won: 0, wonAmt: 0, saleWon: 0, late: 0, claim: 0, noUpd: 0, open: 0, miss: 0, lic: 0, over: today > (e.to || e.from) };
+  rows.forEach(({ it, o }) => {
+    s.amt += it.amt; if(o.saleWon) s.saleWon++;
+    if(o.st === 'won'){ s.won++; s.wonAmt += o.rtAmt; s.lic += o.rtIn.reduce((a, d) => a + (d.licQty || 0), 0); if(!o.saleWon) s.noUpd++; }
+    else if(o.st === 'late') s.late++;
+    else if(o.st === 'claim') s.claim++;
+    else if(o.st === 'open' || o.st === 'nolid') s.open++;
+    else s.miss++;
+  });
+  s.rate = s.n ? s.won / s.n : null;
+  s.result = !s.n ? { k: 'none', t: 'ไม่ได้ใส่ T1', c: 'bad' }
+    : s.won >= FC_T1_TARGET ? { k: 'pass', t: `✓ ปิดได้ครบ ${FC_T1_TARGET} ร้าน`, c: 'ok' }
+    : s.over ? { k: 'fail', t: `✗ ปิดได้ ${s.won}/${FC_T1_TARGET}`, c: 'bad' }
+    : { k: 'ongoing', t: `กำลังลุ้น ${s.won}/${FC_T1_TARGET}`, c: 'wait' };
+  return s;
+}
+function fcWeekLabel(from, to){ return `${fmtThaiDate(from)} – ${fmtThaiDate(to || from)}`; }
+function initForecast(){
+  if(FC_INIT) return; FC_INIT = true;
+  document.getElementById('fc-week').addEventListener('change', () => { FC_OPEN.clear(); renderForecast(); });
+  document.getElementById('fc-body').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-fc-sale]'); if(!tr) return;
+    const k = tr.getAttribute('data-fc-sale'); if(FC_OPEN.has(k)) FC_OPEN.delete(k); else FC_OPEN.add(k);
+    renderForecast();
+  });
+}
+function renderForecast(){
+  initForecast();
+  if(FC_STATE.live === 'idle') loadForecastLive();
+  if(FC_STATE.log === 'idle') loadForecastLog();
+  if(QT_STATE.state === 'idle') loadQT();
+  const body = document.getElementById('fc-body'), sub = document.getElementById('fc-sub'), sel = document.getElementById('fc-week');
+  if(!FC_LIVE && FC_STATE.live !== 'error'){ sub.textContent = 'กำลังอ่านไฟล์ Sale 4 Matrix…'; body.innerHTML = '<div class="panel"><div class="dq-how">กำลังโหลด Forecast ของเซลแต่ละคน…</div></div>'; return; }
+  const W = fcWeeks();
+  const weeks = [...W.keys()].sort().reverse();
+  if(!weeks.length){ sub.textContent = ''; body.innerHTML = `<div class="panel"><div class="dq-how">${FC_STATE.live === 'error' ? escHtml(FC_STATE.msg) : 'ยังไม่มี Forecast ที่ใส่วันที่เริ่มต้น–สิ้นสุด'}</div></div>`; return; }
+  const liveWeek = (FC_LIVE || []).map(p => p.from).filter(Boolean).sort().pop() || weeks[0];
+  const prevSel = sel.value;
+  sel.innerHTML = weeks.map(w => { const any = W.get(w).values().next().value; return `<option value="${w}">${w === liveWeek ? 'สัปดาห์ล่าสุดในชีท · ' : ''}${fcWeekLabel(w, any.to)}</option>`; }).join('');
+  sel.value = weeks.includes(prevSel) ? prevSel : liveWeek;
+  const wk = sel.value, today = demoToday();
+  const ents = [...W.get(wk).values()];
+  const stats = ents.map(e => fcSaleStats(e, today)).sort((a, b) => b.won - a.won || b.n - a.n || String(a.e.tab).localeCompare(String(b.e.tab)));
+  const any = ents[0];
+  const over = today > (any.to || any.from);
+  sub.innerHTML = `Tier 1 · Weekly Must-WON · สัปดาห์ ${escHtml(fcWeekLabel(wk, any.to))} ${over ? '(จบสัปดาห์แล้ว)' : '(กำลังดำเนินการ)'} · ใบเสร็จ RT ถึง ${SALES_LIVE ? fmtThaiDate(SALES_LIVE.maxDate) : '–'}`;
+  const tot = stats.reduce((a, s) => { a.n += s.n; a.amt += s.amt; a.won += s.won; a.wonAmt += s.wonAmt; a.saleWon += s.saleWon; a.claim += s.claim; a.noUpd += s.noUpd; a.late += s.late; a.pass += s.result.k === 'pass' ? 1 : 0; a.none += s.n ? 0 : 1; return a; }, { n: 0, amt: 0, won: 0, wonAmt: 0, saleWon: 0, claim: 0, noUpd: 0, late: 0, pass: 0, none: 0 });
+  const tile = (label, value, hint) => `<div class="sd-tile"><div class="sd-tile-label">${label}</div><div class="sd-tile-value">${value}</div><div class="dm-th-sub">${hint}</div></div>`;
+  const tiles = `<div class="sd-tiles sd-tiles4">
+    ${tile('ร้านใน T1 ทั้งทีม', fmtNum(tot.n), `มูลค่าพยากรณ์ ${moneyShort(tot.amt)} · ${fmtNum(stats.length - tot.none)}/${fmtNum(stats.length)} คนใส่ T1`)}
+    ${tile('ปิดได้จริง (มีใบเสร็จ RT)', `${fmtNum(tot.won)} <span class="qt-unit">ร้าน</span>`, `${pctTxt(tot.n ? tot.won / tot.n : null)} ของ T1 · ${moneyShort(tot.wonAmt)}${tot.late ? ` · ปิดหลังสัปดาห์อีก ${tot.late}` : ''}`)}
+    ${tile(`เซลผ่านเป้า (ปิด ≥ ${FC_T1_TARGET} ร้าน)`, `${fmtNum(tot.pass)} <span class="qt-unit">/ ${fmtNum(stats.length)} คน</span>`, over ? 'จบสัปดาห์แล้ว' : 'สัปดาห์ยังไม่จบ')}
+    ${tile('ผลในชีท ไม่ตรงกับระบบ', fmtNum(tot.claim + tot.noUpd), `แจ้ง Won แต่ไม่พบใบเสร็จ ${tot.claim} · ปิดได้แต่ยังไม่อัปเดตผล ${tot.noUpd}`)}
+  </div>`;
+  const NC = 9;
+  const rows = stats.map(s => {
+    const k = s.e.tab, open = FC_OPEN.has(k);
+    const name = s.e.sale ? saleLabelHtml(s.e.sale) : escHtml(k);
+    const cnt = s.n >= FC_T1_TARGET ? `<b>${s.n}</b>` : `<b class="dm-gap">${s.n}</b>`;
+    let html = `<tr class="dm-row${open ? ' open' : ''}" data-fc-sale="${escHtml(k)}" style="cursor:pointer;">
+      <td class="dm-name" style="text-align:left;">${open ? '▾' : '▸'} ${name}</td>
+      <td>${cnt}<div class="dm-th-sub">เป้า ≥ ${FC_T1_TARGET}</div></td><td>${s.n ? moneyShort(s.amt) : '<span class="pl-zero">–</span>'}</td>
+      <td><b style="color:#1F7A47">${s.won}</b>${s.won ? `<div class="dm-th-sub">${moneyShort(s.wonAmt)}</div>` : ''}</td>
+      <td>${s.saleWon}</td>
+      <td>${s.late || '<span class="pl-zero">0</span>'}</td>
+      <td>${s.claim + s.noUpd ? `<span class="dm-gap">${s.claim + s.noUpd}</span>` : '<span class="pl-zero">0</span>'}</td>
+      <td>${pctTxt(s.rate)}</td>
+      <td style="text-align:left;"><span class="tk-pill ${s.result.c}">${s.result.t}</span></td></tr>`;
+    if(open){
+      const list = s.rows.length ? s.rows.map(({ it, o }) => {
+        const S = FC_ST[o.st];
+        const rt = o.rtIn.length ? o.rtIn.map(d => `${escHtml(d.code)} · ${fmtThaiDate(d.pd)} · ${money(d.preTax)}`).join('<br>') : o.rtLate ? `${escHtml(o.rtLate.code)} · ${fmtThaiDate(o.rtLate.pd)} · ${money(o.rtLate.preTax)}` : '<span class="pl-zero">ไม่พบ</span>';
+        const note = o.st === 'won' && !o.saleWon ? '<div class="dm-th-sub dm-gap">ในชีทยังไม่ได้ใส่ผล Won</div>' : '';
+        return `<tr><td style="text-align:left;">${escHtml(it.lid || '–')}</td><td style="text-align:left;">${escHtml(it.shop)}<div class="dm-th-sub">${escHtml(it.prod)}${it.qty ? ' · ' + fmtNum(it.qty) + ' License' : ''}</div></td>
+          <td>${it.amt ? money(it.amt) : '–'}</td>
+          <td style="text-align:left;">${it.res ? escHtml(it.res) : '<span class="pl-zero">ยังไม่กรอก</span>'}${it.det ? `<div class="dm-th-sub" style="white-space:normal;max-width:260px;">${escHtml(it.det)}</div>` : ''}</td>
+          <td style="text-align:left;"><span class="tk-pill ${S.c}">${S.t}</span>${note}</td>
+          <td style="text-align:left;">${rt}</td>
+          <td style="text-align:left;">${o.lead ? escHtml(o.lead.st || '–') : '<span class="pl-zero">ไม่พบ Lead</span>'}</td>
+          <td style="text-align:left;">${o.qt ? qtChip(o.qt) : '<span class="pl-zero">–</span>'}</td></tr>`;
+      }).join('') : `<tr><td colspan="8" style="text-align:left;"><span class="dm-gap">ไม่ได้ใส่ร้านใน Tier 1 ของสัปดาห์นี้</span></td></tr>`;
+      html += `<tr class="dm-detail"><td colspan="${NC}" style="padding:0;"><div class="pl-detail" style="padding:6px 8px 12px;">
+        <table class="dm-list"><thead><tr><th style="text-align:left;">LID</th><th style="text-align:left;">ร้าน · สินค้า</th><th>มูลค่า</th><th style="text-align:left;">ผลที่เซลกรอก</th><th style="text-align:left;">ระบบตรวจ</th><th style="text-align:left;">ใบเสร็จ RT</th><th style="text-align:left;">สถานะ Lead ตอนนี้</th><th style="text-align:left;">QT ล่าสุด</th></tr></thead><tbody>${list}</tbody></table>
+        <div class="dm-th-sub" style="margin-top:6px;">ชีท: แท็บ ${escHtml(k)}${s.e.live ? ' (ข้อมูลสด)' : ' (จากประวัติ Forecast Log)'}</div></div></td></tr>`;
+    }
+    return html;
+  }).join('');
+  const table = `<div class="panel"><div class="panel-head"><h2>Tier 1 รายเซล</h2><span class="hint">แตะชื่อเซลเพื่อดูรายชื่อร้าน · ปิดได้ = มีใบเสร็จ RT ของ LID นั้นในช่วงสัปดาห์</span></div>
+    <div class="table-x"><table class="team-table pl-table"><thead><tr><th style="text-align:left;">เซล</th><th>ร้านใน T1</th><th>มูลค่า<br>พยากรณ์</th><th>ปิดได้<br><span class="dm-th-sub">ใบเสร็จ RT</span></th><th>เซลแจ้ง<br>Won</th><th>ปิดหลัง<br>สัปดาห์</th><th>ไม่ตรง<br><span class="dm-th-sub">ชีท ↔ ระบบ</span></th><th>% ปิดได้</th><th style="text-align:left;">ผล</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  // ประวัติย้อนหลัง
+  const hist = weeks.filter(w => w <= wk).slice(0, FC_HISTORY_WEEKS).reverse();
+  let histHtml = '';
+  if(hist.length > 1){
+    const tabs = [...new Set(hist.flatMap(w => [...W.get(w).keys()]))];
+    const grid = tabs.map(tab => {
+      let sn = 0, sw = 0, pass = 0, weeksIn = 0, name = tab;
+      const cells = hist.map(w => {
+        const e = W.get(w).get(tab); if(!e) return '<td class="tk-c na"><span class="pl-zero">–</span></td>';
+        if(e.sale) name = e.sale;
+        const s = fcSaleStats(e, today); sn += s.n; sw += s.won; weeksIn++; if(s.result.k === 'pass') pass++;
+        const c = s.result.k === 'pass' ? 'ok' : s.result.k === 'ongoing' ? 'wait' : 'bad';
+        return `<td class="tk-c ${c}" title="${escHtml(fcWeekLabel(e.from, e.to))}"><div class="tk-mark">${s.won}/${s.n}</div></td>`;
+      }).join('');
+      return { sn, sw, html: `<tr><td style="text-align:left;">${name === tab ? escHtml(tab) : saleLabelHtml(name)}</td>${cells}<td><b>${pctTxt(sn ? sw / sn : null)}</b><div class="dm-th-sub">${sw}/${sn} ร้าน</div></td><td>${pass}/${weeksIn}</td></tr>` };
+    }).sort((a, b) => (b.sn ? b.sw / b.sn : -1) - (a.sn ? a.sw / a.sn : -1)).map(x => x.html).join('');
+    histHtml = `<div class="panel"><div class="panel-head"><h2>ความแม่นของ Forecast T1 ย้อนหลัง</h2><span class="hint">ช่อง = ปิดได้/ร้านใน T1 · เขียว = ปิดได้ ≥ ${FC_T1_TARGET} ร้าน</span></div>
+      <div class="table-x"><table class="team-table tk-table tk-week"><thead><tr><th style="text-align:left;">เซล</th>${hist.map(w => { const e = W.get(w).values().next().value; return `<th class="tk-dh">${escHtml(fmtThaiDate(w).replace(/ \d{4}$/, ''))}<div class="dm-th-sub">–${escHtml(fmtThaiDate(e.to || w).replace(/ \d{4}$/, ''))}</div></th>`; }).join('')}<th>% ปิดได้รวม</th><th>สัปดาห์<br>ที่ผ่าน</th></tr></thead><tbody>${grid}</tbody></table></div></div>`;
+  } else {
+    histHtml = `<div class="panel"><div class="dq-how">${FC_STATE.log === 'loading' ? 'กำลังโหลดประวัติ Forecast…' : FC_STATE.log === 'error' ? 'โหลดประวัติ Forecast Log ไม่ได้' : 'ประวัติย้อนหลังจะเริ่มสะสมจากแท็บ Forecast Log ในชีท INTD (บันทึกอัตโนมัติทุกวัน ~23:00) — สัปดาห์ถัดไปจะเริ่มเห็นตารางเทียบรายสัปดาห์'}</div></div>`;
+  }
+  const how = `<div class="dq-how" style="margin-top:4px;">ระบบตรวจ: <b>ปิดได้</b> = มีใบเสร็จ RT ของ LID นั้นตั้งแต่วันเริ่มถึงวันสิ้นสุดสัปดาห์ในชีท · <b>ปิดได้หลังสัปดาห์</b> = ใบเสร็จออกภายใน ${FC_LATE_DAYS} วันหลังจบสัปดาห์ · <b>เซลแจ้ง Won · ไม่พบใบเสร็จ</b> = ในชีทใส่ Won แต่ยังไม่มีใบเสร็จ RT · ร้านที่ใส่ซ้ำหลายแถวนับเป็นร้านเดียว (รวมจำนวน/มูลค่า)</div>`;
+  body.innerHTML = tiles + table + histHtml + how;
+}
 switchPage(CURRENT_PAGE);
 loadData();
 </script>
 
 </body>
 </html>
-<!-- build: v34 2026-10-19 QT label ออกครบแล้ว (not paid) -->
+<!-- build: v35 2026-10-19 Forecast T1 page -->
