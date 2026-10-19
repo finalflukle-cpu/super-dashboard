@@ -651,6 +651,9 @@
   .tk-lvbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px 0;font-size:12.5px;}
   .tk-lvbar.on{background:#F3F5FB;border:1px solid #D9DEEE;border-radius:8px;padding:8px 10px;}
   .tk-lv-pin{border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:13px;width:120px;}
+  .tk-ovr-why{font-size:11px;color:#4A5A8A;white-space:normal;max-width:240px;margin-top:3px;} .tk-ovr-btn{padding:2px 8px !important;font-size:11px !important;margin-top:3px;}
+  .tk-ovr-form td{background:#F3F5FB !important;} .tk-ovr-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;} .tk-ovr-row select,.tk-ovr-row input{border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:13px;} .tk-ovr-row input{flex:1;min-width:220px;}
+  .tk-ovr-log{font-size:12px;color:var(--text-secondary);line-height:1.7;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
   .tk-plan{font-size:10.5px;color:#1D6F8F;font-weight:600;margin-top:1px;}
   .tk-nums{font-size:10.5px;color:var(--text-secondary);line-height:1.3;} .tk-nums .hit{color:#1F7A47;font-weight:700;}
   .tk-meter{height:5px;background:#F0F0EB;border-radius:999px;overflow:hidden;margin-top:3px;min-width:70px;} .tk-meter i{display:block;height:100%;} .tk-meter i.hit{background:#2F7D4F;} .tk-meter i.mid{background:#F2C94C;} .tk-meter i.low{background:#D64545;}
@@ -4545,12 +4548,14 @@ let TRK_INIT = false;
 const LEAVE_API_URL = 'https://script.google.com/macros/s/AKfycbzAcNoIEetSCzX2S0MjoufQsZm8B7RpUmiafiCOlffAzIcm7ObcKEM-WqbYhHNvFggO/exec';   // URL ของ Web app (Deploy → Web app) — ว่าง = ยังไม่เปิดใช้
 const TRK_HOLIDAY = 'ALL';  // ชื่อพิเศษ = วันหยุดของทุกคน
 let LEAVE_ROWS = null, LEAVE_STATE = 'idle', LEAVE_EDIT = false, LEAVE_BUSY = '', LEAVE_MSG = '';
+// ปรับผลสัปดาห์โดย Admin (ผู้ใช้เพิ่ม 19 ต.ค. 2026) — ใช้รหัสเดียวกับวันลา · บันทึกทุกครั้งลงแท็บ "Tracking Override" ในชีท INTD (เป็น Log)
+let OVR_ROWS = [], OVR_EDIT = false, OVR_FORM = '', OVR_BUSY = '', OVR_MSG = '', OVR_DRAFT = null;
 function leavePin(){ try{ return localStorage.getItem('trk-leave-pin') || ''; }catch(e){ return ''; } }
 function setLeavePin(v){ try{ if(v) localStorage.setItem('trk-leave-pin', v); else localStorage.removeItem('trk-leave-pin'); }catch(e){} }
 async function loadLeave(){
   if(!LEAVE_API_URL){ LEAVE_ROWS = []; LEAVE_STATE = 'off'; return; }
   LEAVE_STATE = 'loading';
-  try{ const r = await fetch(LEAVE_API_URL, { cache: 'no-store' }); const j = await r.json(); LEAVE_ROWS = j.rows || []; LEAVE_STATE = 'ok'; }
+  try{ const r = await fetch(LEAVE_API_URL, { cache: 'no-store' }); const j = await r.json(); LEAVE_ROWS = j.rows || []; if(Array.isArray(j.ovr)) OVR_ROWS = j.ovr; LEAVE_STATE = 'ok'; }
   catch(e){ LEAVE_ROWS = LEAVE_ROWS || []; LEAVE_STATE = 'error'; }
   if(CURRENT_PAGE === 'tracking') renderTracking();
 }
@@ -4562,7 +4567,7 @@ async function toggleLeave(n, d, on){
   try{
     const r = await fetch(LEAVE_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ pin, n, d, on, t: n === TRK_HOLIDAY ? 'holiday' : 'leave' }) });
     const j = await r.json();
-    if(j.ok){ LEAVE_ROWS = j.rows || []; LEAVE_STATE = 'ok'; }
+    if(j.ok){ LEAVE_ROWS = j.rows || []; if(Array.isArray(j.ovr)) OVR_ROWS = j.ovr; LEAVE_STATE = 'ok'; }
     else { LEAVE_MSG = j.err === 'PIN' ? 'รหัสไม่ถูกต้อง — ใส่ใหม่อีกครั้ง' : j.err === 'NOPIN' ? 'ยังไม่ได้ตั้งรหัส LEAVE_PIN ในสคริปต์' : 'บันทึกไม่สำเร็จ'; if(j.err === 'PIN') setLeavePin(''); }
   }catch(e){ LEAVE_MSG = 'บันทึกไม่สำเร็จ (เชื่อมต่อระบบวันลาไม่ได้)'; }
   LEAVE_BUSY = ''; renderTracking();
@@ -4570,12 +4575,44 @@ async function toggleLeave(n, d, on){
 function trkLeaveBar(){
   if(!LEAVE_API_URL) return '';
   const st = LEAVE_STATE === 'error' ? '<span class="dm-gap">โหลดวันลาไม่ได้</span>' : LEAVE_STATE === 'loading' ? '<span class="dm-th-sub">กำลังโหลดวันลา…</span>' : '';
-  if(!LEAVE_EDIT) return `<div class="tk-lvbar"><button class="btn btn-ghost btn-sm" id="tk-lv-toggle">✎ บันทึกวันลา / วันหยุด</button>${st}</div>`;
+  if(OVR_EDIT) return trkOvrBar(st);
+  if(!LEAVE_EDIT) return `<div class="tk-lvbar"><button class="btn btn-ghost btn-sm" id="tk-lv-toggle">✎ บันทึกวันลา / วันหยุด</button><button class="btn btn-ghost btn-sm" id="tk-ovr-toggle">✎ ปรับผลสัปดาห์ (Admin)</button>${st}</div>`;
   const pin = leavePin();
   return `<div class="tk-lvbar on"><button class="btn btn-primary btn-sm" id="tk-lv-toggle">✓ เสร็จแล้ว</button>
     ${pin ? `<span class="dm-th-sub">แตะช่องของเซล (จ.–ศ.) เพื่อติ๊ก/ยกเลิก <b>วันลา</b> · แตะหัววันที่เพื่อตั้งเป็น <b>วันหยุดทุกคน</b></span> <button class="btn btn-ghost btn-sm" id="tk-lv-logout">เปลี่ยนรหัส</button>`
       : `<span class="dm-th-sub">ใส่รหัสสำหรับบันทึกวันลา</span><input type="password" id="tk-lv-pin" class="tk-lv-pin" autocomplete="off"><button class="btn btn-ghost btn-sm" id="tk-lv-pin-save">ใช้รหัสนี้</button>`}
     ${LEAVE_BUSY ? '<span class="dm-th-sub">กำลังบันทึก…</span>' : ''}${LEAVE_MSG ? `<span class="dm-gap">${escHtml(LEAVE_MSG)}</span>` : ''}${st}</div>`;
+}
+
+// ---- ปรับผลสัปดาห์โดย Admin ----
+// แถวใน Log: {w: วันจันทร์, n: ชื่อเซล, r: 'pass'|'fail'|'auto', why, at} — ใช้แถวล่าสุดของ (สัปดาห์, เซล) · 'auto' = กลับไปใช้ผลตามระบบ
+function trkOvrMap(){
+  const m = new Map();
+  (OVR_ROWS || []).slice().sort((a, b) => String(a.at) < String(b.at) ? -1 : String(a.at) > String(b.at) ? 1 : 0).forEach(r => {
+    const k = r.n + '|' + r.w;
+    if(r.r === 'pass' || r.r === 'fail') m.set(k, r); else m.delete(k);
+  });
+  return m;
+}
+function trkOvrBar(st){
+  const pin = leavePin();
+  return `<div class="tk-lvbar on"><button class="btn btn-primary btn-sm" id="tk-ovr-toggle">✓ เสร็จแล้ว</button>
+    ${pin ? `<span class="dm-th-sub">กด <b>ปรับ</b> ในช่องผลสัปดาห์ของเซล · เลือก ผ่าน / ไม่ผ่าน และใส่เหตุผล · ทุกครั้งที่บันทึกจะเก็บ Log ไว้ในชีท INTD แท็บ Tracking Override</span> <button class="btn btn-ghost btn-sm" id="tk-lv-logout">เปลี่ยนรหัส</button>`
+      : `<span class="dm-th-sub">ใส่รหัส Admin (รหัสเดียวกับบันทึกวันลา)</span><input type="password" id="tk-lv-pin" class="tk-lv-pin" autocomplete="off"><button class="btn btn-ghost btn-sm" id="tk-lv-pin-save">ใช้รหัสนี้</button>`}
+    ${OVR_BUSY ? '<span class="dm-th-sub">กำลังบันทึก…</span>' : ''}${OVR_MSG ? `<span class="dm-gap">${escHtml(OVR_MSG)}</span>` : ''}${st}</div>`;
+}
+async function saveOverride(n, w, r, why){
+  const pin = leavePin();
+  if(!pin){ OVR_MSG = 'ใส่รหัสก่อน'; renderTracking(); return; }
+  if(r !== 'auto' && !why){ OVR_MSG = 'ต้องใส่เหตุผลทุกครั้ง'; renderTracking(); return; }
+  OVR_BUSY = n + '|' + w; OVR_MSG = ''; renderTracking();
+  try{
+    const res = await fetch(LEAVE_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ pin, kind: 'override', n, w, r, why }) });
+    const j = await res.json();
+    if(j.ok){ if(Array.isArray(j.ovr)) OVR_ROWS = j.ovr; if(j.rows) LEAVE_ROWS = j.rows; OVR_FORM = ''; OVR_DRAFT = null; }
+    else { OVR_MSG = j.err === 'PIN' ? 'รหัสไม่ถูกต้อง — ใส่ใหม่อีกครั้ง' : j.err === 'NOPIN' ? 'ยังไม่ได้ตั้งรหัสในสคริปต์' : j.err === 'WHY' ? 'ต้องใส่เหตุผล' : 'บันทึกไม่สำเร็จ (ระบบยังไม่รองรับ — ต้องอัปเดตสคริปต์ Leave Tracking)'; if(j.err === 'PIN') setLeavePin(''); }
+  }catch(e){ OVR_MSG = 'บันทึกไม่สำเร็จ (เชื่อมต่อระบบไม่ได้)'; }
+  OVR_BUSY = ''; renderTracking();
 }
 
 function initTracking(){
@@ -4592,13 +4629,17 @@ function initTracking(){
   ['tk-week', 'tk-team', 'tk-view', 'tk-day'].forEach(id => document.getElementById(id).addEventListener('change', e => { if(e.target.id === 'tk-week') document.getElementById('tk-day').value = ''; renderTracking(); }));
   document.getElementById('tk-body').addEventListener('click', e => {
     const t = e.target;
-    if(t.closest('#tk-lv-toggle')){ LEAVE_EDIT = !LEAVE_EDIT; LEAVE_MSG = ''; renderTracking(); return; }
+    if(t.closest('#tk-lv-toggle')){ LEAVE_EDIT = !LEAVE_EDIT; OVR_EDIT = false; LEAVE_MSG = ''; renderTracking(); return; }
+    if(t.closest('#tk-ovr-toggle')){ OVR_EDIT = !OVR_EDIT; LEAVE_EDIT = false; OVR_FORM = ''; OVR_MSG = ''; renderTracking(); return; }
+    const ob = t.closest('[data-ovr-open]'); if(ob){ OVR_FORM = ob.getAttribute('data-ovr-open'); OVR_DRAFT = null; OVR_MSG = ''; renderTracking(); const i = document.getElementById('tk-ovr-why'); if(i) i.focus(); return; }
+    if(t.closest('#tk-ovr-cancel')){ OVR_FORM = ''; OVR_DRAFT = null; OVR_MSG = ''; renderTracking(); return; }
+    if(t.closest('#tk-ovr-save') && !OVR_BUSY){ const [n, w] = OVR_FORM.split('|'); OVR_DRAFT = { r: document.getElementById('tk-ovr-r').value, why: (document.getElementById('tk-ovr-why').value || '').trim().slice(0, 300) }; saveOverride(n, w, OVR_DRAFT.r, OVR_DRAFT.why); return; }
     if(t.closest('#tk-lv-logout')){ setLeavePin(''); renderTracking(); return; }
-    if(t.closest('#tk-lv-pin-save')){ const v = (document.getElementById('tk-lv-pin').value || '').trim(); if(v){ setLeavePin(v); LEAVE_MSG = ''; } renderTracking(); return; }
+    if(t.closest('#tk-lv-pin-save')){ const v = (document.getElementById('tk-lv-pin').value || '').trim(); if(v){ setLeavePin(v); LEAVE_MSG = ''; OVR_MSG = ''; } renderTracking(); return; }
     const cell = t.closest('[data-lv-d]');
     if(cell && LEAVE_EDIT && !LEAVE_BUSY) toggleLeave(cell.getAttribute('data-lv-n'), cell.getAttribute('data-lv-d'), cell.getAttribute('data-lv-on') !== '1');
   });
-  document.getElementById('tk-body').addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.id === 'tk-lv-pin'){ const b = document.getElementById('tk-lv-pin-save'); if(b) b.click(); } });
+  document.getElementById('tk-body').addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.id === 'tk-lv-pin'){ const b = document.getElementById('tk-lv-pin-save'); if(b) b.click(); } if(e.key === 'Enter' && e.target.id === 'tk-ovr-why'){ const b = document.getElementById('tk-ovr-save'); if(b) b.click(); } });
 }
 function trkTeamOptions(){
   const sel = document.getElementById('tk-team');
@@ -4661,7 +4702,7 @@ function trkLicense(){
 
 // ---- ประเมิน 1 คน 1 สัปดาห์ ----
 // day: { d, wd(0=จ.), demo, calls, state: 'pass-demo'|'pass-call'|'pass-comp'|'fail'|'today'|'future'|'weekend'|'nodata', need }
-function trkEvalWeek(mon, today, callMap, demoMap, licMap, callFrom, planMap, leaveOf){
+function trkEvalWeek(mon, today, callMap, demoMap, licMap, callFrom, planMap, leaveOf, ovr){
   const days = [...Array(7)].map((_, i) => demoAddDays(mon, i));
   const sun = days[6];
   const res = days.map((d, wd) => {
@@ -4703,13 +4744,19 @@ function trkEvalWeek(mon, today, callMap, demoMap, licMap, callFrom, planMap, le
   else if(failed === 0 && closed) result = 'pass';
   else if(failed === 0) result = 'ongoing';
   else result = closed ? 'fail' : 'risk';
-  return { mon, days: res, lic, leaveDays, demoTarget, demoWeek, callWeek, planWeek, passed, failed, evaluated, closed, result, points: result === 'fail' ? -TRK_PENALTY : 0, pool: poolAll, poolLeft: pool };
+  const auto = result;
+  if(ovr && (ovr.r === 'pass' || ovr.r === 'fail')) result = ovr.r === 'pass' ? 'ovr-pass' : 'ovr-fail';   // Admin ปรับผล
+  return { mon, days: res, lic, leaveDays, demoTarget, demoWeek, callWeek, planWeek, passed, failed, evaluated, closed, result, auto, ovr: result !== auto ? ovr : null, points: trkIsFail(result) ? -TRK_PENALTY : 0, pool: poolAll, poolLeft: pool };
 }
 function trkPeople(scope){
   const inS = t => scope === 'mine' ? activeTeams().includes(t) : t === scope;
   return knownSaleNames().filter(n => !TRK_EXCLUDE.has(n) && inS(teamOf(n))).sort((a, b) => a.localeCompare(b, 'th'));
 }
+function trkIsFail(r){ return r === 'fail' || r === 'ovr-fail'; }
+function trkIsPass(r){ return /^pass/.test(r) || r === 'ovr-pass'; }
 const TRK_RESULT = {
+  'ovr-pass': { t: 'ผ่าน (Admin ปรับ)', c: 'ok' },
+  'ovr-fail': { t: 'ไม่ผ่าน (Admin ปรับ)', c: 'bad' },
   'pass-lic': { t: 'ผ่าน (ขายครบ 3 License)', c: 'ok' },
   'pass-demo10': { t: 'ผ่าน (Demo สะสมครบเป้า)', c: 'ok' },
   'off': { t: 'ลา/หยุดทั้งสัปดาห์', c: 'wait' },
@@ -4732,6 +4779,13 @@ function trkCell(o, n){
   if(st === 'future') return `<td class="tk-c na${o.wd >= 5 ? ' we' : ''}${edit}${busy}"${lvAttr} title="${escHtml(tip)}">${planTag}</td>`;
   return `<td class="tk-c ${cls}${st === 'weekend' ? ' we' : ''}${edit}${busy}"${lvAttr} title="${escHtml(tip)}"><div class="tk-mark">${/^pass/.test(st) ? (st === 'pass-comp' ? '✓*' : '✓') : st === 'fail' ? '✗' : st === 'weekend' ? (o.demo ? '+' + o.demo : '') : st === 'today' ? '…' : st === 'nodata' ? '–' : ''}</div>
     <div class="tk-nums"><span class="${o.demo >= TRK_DEMO_DAY ? 'hit' : ''}">D ${o.demo}</span>${st !== 'weekend' ? ` <span class="${o.calls >= TRK_CALL_DAY ? 'hit' : ''}">☎ ${o.calls}</span>` : ''}</div>${planTag}</td>`;
+}
+// Log การปรับผลของสัปดาห์ที่เลือก (ทุกครั้ง รวมที่ถูกแก้ทับแล้ว)
+function trkOvrLog(mon){
+  const list = (OVR_ROWS || []).filter(r => r.w === mon).sort((a, b) => String(a.at) < String(b.at) ? 1 : -1);
+  if(!list.length) return '';
+  const lbl = r => r.r === 'pass' ? 'ผ่าน' : r.r === 'fail' ? 'ไม่ผ่าน' : 'ยกเลิกการปรับ';
+  return `<div class="tk-ovr-log"><b>Log การปรับผลโดย Admin (สัปดาห์นี้)</b>${list.map(r => `<div>${escHtml(String(r.at || '').slice(0, 16).replace('T', ' '))} · ${saleLabelHtml(r.n)} · <b>${lbl(r)}</b>${r.why ? ' · ' + escHtml(r.why) : ''}</div>`).join('')}</div>`;
 }
 function trkMeter(v, t){ const p = Math.min(100, t ? v / t * 100 : 0); return `<div class="tk-meter"><i class="${v >= t ? 'hit' : v >= t / 2 ? 'mid' : 'low'}" style="width:${p.toFixed(1)}%"></i></div>`; }
 
@@ -4764,7 +4818,8 @@ function renderTracking(){
   const salesTo = SALES_LIVE ? SALES_LIVE.maxDate : '';
   const lvMap = trkLeaveMap();
   const leaveOf = n => d => lvMap.get(n + '|' + d) || (lvMap.has(TRK_HOLIDAY + '|' + d) ? 'holiday' : '');
-  const evals = people.map(n => ({ n, t: teamOf(n), ph: salePhoneOf(n), w: trkEvalWeek(mon, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n)) }));
+  const ovrMap = trkOvrMap();
+  const evals = people.map(n => ({ n, t: teamOf(n), ph: salePhoneOf(n), w: trkEvalWeek(mon, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n), ovrMap.get(n + '|' + mon)) }));
   const licNote = salesTo && salesTo < sun ? ` · ยอดขาย (RT) มีถึง ${fmtThaiDate(salesTo)} — License ของสัปดาห์นี้อาจยังไม่ครบ` : '';
   sub.textContent = `${demoWeekLabel(mon)} · ${people.length} คน · เป้า: Demo ${TRK_DEMO_DAY} ร้าน/วัน หรือ โทรหา Lead ${TRK_CALL_DAY} สาย/วัน (1 Demo = ${TRK_DEMO_CALLS} สาย) · ขาย ${TRK_LIC_WEEK} License หรือ Demo สะสม ${TRK_DEMO_WEEK} ร้าน/สัปดาห์ = ผ่านทั้งสัปดาห์${licNote}`;
   const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรออกหา Lead ≥ ${TRK_CALL_DAY} สาย</b> หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
@@ -4796,7 +4851,7 @@ function renderTracking(){
       }).join('')}
       </tbody></table></div>${rules}</div>`;
   } else {
-    const order = { 'fail': 0, 'risk': 1, 'upcoming': 2, 'ongoing': 2, 'pass': 3, 'pass-demo10': 4, 'pass-lic': 5 };
+    const order = { 'fail': 0, 'ovr-fail': 0, 'risk': 1, 'upcoming': 2, 'ongoing': 2, 'off': 2, 'pass': 3, 'ovr-pass': 3, 'pass-demo10': 4, 'pass-lic': 5 };
     const rows = evals.slice().sort((a, b) => order[a.w.result] - order[b.w.result] || b.w.passed - a.w.passed || b.w.lic - a.w.lic);
     const cnt = k => rows.filter(e => e.w.result === k).length;
     const closed = today > sun;
@@ -4804,28 +4859,33 @@ function renderTracking(){
       return `<th class="tk-dh${i >= 5 ? ' we' : ''}${d === today ? ' today' : ''}${hol ? ' hol' : ''}${lv ? ' tk-edit' : ''}${LEAVE_BUSY === TRK_HOLIDAY + '|' + d ? ' busy' : ''}"${lv}>${DEMO_TH_DOW[i]}<div class="dm-th-sub">${demoDM(d)}</div>${hol ? '<div class="tk-hol">วันหยุด</div>' : ''}</th>`; }).join('');
     html += trkLeaveBar() + `<div class="tk-cap">
       <div class="tk-cap-h"><div><h2>Tracking รายสัปดาห์ · ${demoWeekLabel(mon)}</h2><div class="dm-th-sub">${escHtml(document.getElementById('tk-team').selectedOptions[0]?.textContent || '')} · ${people.length} คน · ${closed ? 'ปิดสัปดาห์แล้ว' : today < mon ? 'ยังไม่เริ่มสัปดาห์ — แสดงนัด Demo ที่จองไว้แล้ว' : 'สัปดาห์ยังไม่จบ (ข้อมูล ณ ตอนนี้)'}</div></div>
-        <div class="tk-score">${today < mon ? `<span class="tk-pill wait">ยังไม่เริ่มสัปดาห์ · นัด Demo ไว้แล้ว ${rows.reduce((a, e) => a + e.w.planWeek, 0)} ร้าน</span>` : `<span class="tk-pill ok">ผ่าน ${cnt('pass') + cnt('pass-lic') + cnt('pass-demo10')}</span>`}${today < mon ? '' : closed ? `<span class="tk-pill bad">ไม่ผ่าน ${cnt('fail')} (-${cnt('fail') * TRK_PENALTY} แต้ม)</span>` : `<span class="tk-pill wait">ยังผ่านอยู่ ${cnt('ongoing')}</span><span class="tk-pill risk">มีวันไม่ผ่าน ${cnt('risk')}</span>`}</div></div>
+        <div class="tk-score">${today < mon ? `<span class="tk-pill wait">ยังไม่เริ่มสัปดาห์ · นัด Demo ไว้แล้ว ${rows.reduce((a, e) => a + e.w.planWeek, 0)} ร้าน</span>` : `<span class="tk-pill ok">ผ่าน ${rows.filter(e => trkIsPass(e.w.result)).length}</span>`}${today < mon ? '' : closed ? `<span class="tk-pill bad">ไม่ผ่าน ${rows.filter(e => trkIsFail(e.w.result)).length} (-${rows.filter(e => trkIsFail(e.w.result)).length * TRK_PENALTY} แต้ม)</span>` : `<span class="tk-pill wait">ยังผ่านอยู่ ${cnt('ongoing')}</span><span class="tk-pill risk">มีวันไม่ผ่าน ${cnt('risk')}</span>`}</div></div>
       <div class="table-x"><table class="team-table tk-table tk-week"><thead><tr><th style="text-align:left;">เซล</th>${head}<th>วันผ่าน<div class="dm-th-sub">จ.–ศ.</div></th><th>Demo สะสม<div class="dm-th-sub">เป้า ${TRK_DEMO_WEEK}</div></th><th>โทรสะสม<div class="dm-th-sub">สาย</div></th><th>License<div class="dm-th-sub">เป้า ${TRK_LIC_WEEK}</div></th><th style="text-align:left;">ผลสัปดาห์</th><th>แต้ม</th></tr></thead><tbody>
       ${rows.map(e => { const R = TRK_RESULT[e.w.result]; return `<tr><td style="text-align:left;white-space:nowrap;"><b>${saleLabelHtml(e.n)}</b></td>${e.w.days.map(o => trkCell(o, e.n)).join('')}
         <td><b>${e.w.passed}</b><span class="dm-th-sub">/${e.w.evaluated || 0}</span></td>
         <td><b class="${e.w.demoWeek >= e.w.demoTarget ? 'dm-ok' : ''}">${e.w.demoWeek}</b>${e.w.demoTarget !== TRK_DEMO_WEEK ? `<span class="dm-th-sub">/${e.w.demoTarget}</span>` : ''}${e.w.planWeek ? `<span class="dm-th-sub"> +นัด ${e.w.planWeek}</span>` : ''}${trkMeter(e.w.demoWeek, e.w.demoTarget || 1)}</td>
         <td><b>${fmtNum(e.w.callWeek)}</b><div class="dm-th-sub">เฉลี่ย ${e.w.evaluated ? (e.w.callWeek / e.w.evaluated).toFixed(0) : 0}/วัน</div></td>
         <td><b class="${e.w.lic >= TRK_LIC_WEEK ? 'dm-ok' : ''}">${fmtQty(e.w.lic)}</b>${trkMeter(e.w.lic, TRK_LIC_WEEK)}</td>
-        <td style="text-align:left;"><span class="tk-pill ${R.c}" title="${escHtml(R.h || R.t)}">${R.t}</span></td>
-        <td>${e.w.result === 'fail' ? `<b class="dm-gap">-${TRK_PENALTY}</b>` : closed ? '0' : `<span class="dm-th-sub">${today < mon ? '–' : 'รอปิด'}</span>`}</td></tr>`; }).join('')}
+        <td style="text-align:left;"><span class="tk-pill ${R.c}" title="${escHtml(R.h || R.t)}">${R.t}</span>${e.w.ovr ? `<div class="tk-ovr-why" title="${escHtml('ผลตามระบบ: ' + TRK_RESULT[e.w.auto].t + ' · ปรับเมื่อ ' + String(e.w.ovr.at || '').slice(0, 16))}">${escHtml(e.w.ovr.why || '')}<span class="dm-th-sub"> · ระบบ: ${escHtml(TRK_RESULT[e.w.auto].t)}</span></div>` : ''}${OVR_EDIT && leavePin() && OVR_FORM !== e.n + '|' + mon ? ` <button class="btn btn-ghost btn-sm tk-ovr-btn" data-ovr-open="${escHtml(e.n + '|' + mon)}">ปรับ</button>` : ''}</td>
+        <td>${trkIsFail(e.w.result) ? `<b class="dm-gap">-${TRK_PENALTY}</b>` : closed || e.w.result === 'ovr-pass' ? '0' : `<span class="dm-th-sub">${today < mon ? '–' : 'รอปิด'}</span>`}</td></tr>${OVR_EDIT && OVR_FORM === e.n + '|' + mon ? `<tr class="tk-ovr-form"><td colspan="14" style="text-align:left;">
+          <b>ปรับผลสัปดาห์ของ ${saleLabelHtml(e.n)}</b> <span class="dm-th-sub">ผลตามระบบ: ${escHtml(TRK_RESULT[e.w.auto].t)}</span><div class="tk-ovr-row">
+          ${(() => { const dr = OVR_DRAFT || { r: e.w.result === 'ovr-fail' ? 'fail' : e.w.ovr ? 'pass' : (trkIsFail(e.w.auto) || e.w.auto === 'risk' ? 'pass' : 'fail'), why: e.w.ovr ? e.w.ovr.why || '' : '' };
+            return `<select id="tk-ovr-r"><option value="pass"${dr.r === 'pass' ? ' selected' : ''}>ผ่าน</option><option value="fail"${dr.r === 'fail' ? ' selected' : ''}>ไม่ผ่าน (-${TRK_PENALTY} แต้ม)</option>${e.w.ovr ? `<option value="auto"${dr.r === 'auto' ? ' selected' : ''}>ยกเลิกการปรับ (ใช้ผลตามระบบ)</option>` : ''}</select>
+          <input type="text" id="tk-ovr-why" maxlength="300" placeholder="เหตุผล (จำเป็น) เช่น ปิดได้ 3 License วันเสาร์" value="${escHtml(dr.why)}">`; })()}
+          <button class="btn btn-primary btn-sm" id="tk-ovr-save">${OVR_BUSY ? 'กำลังบันทึก…' : 'บันทึก'}</button><button class="btn btn-ghost btn-sm" id="tk-ovr-cancel">ยกเลิก</button></div></td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
       <div class="sd-legend" style="margin-top:8px;"><span>✓ ผ่าน · ✓* ผ่านด้วย Demo ชดเชยจากเสาร์–อาทิตย์ · ✗ ไม่ผ่าน · … วันนี้ยังไม่ครบ · D = Demo ที่ดำเนินการแล้ว · ☎ = สายโทรออกหา Lead · +n = Demo วันเสาร์–อาทิตย์ · นัด n = นัด Demo ที่ยังไม่ถึง/ยังไม่มีผล · ลา / หยุด = ไม่นับวันนั้น</span></div>
-      ${rules}</div>`;
+      ${rules}${trkOvrLog(mon)}</div>`;
 
     // ---- แต้มสะสมย้อนหลัง ----
     const weeks = [];
     for(let i = TRK_HISTORY_WEEKS - 1; i >= 0; i--){ const m = demoAddDays(mon, -7 * i); if(!callFrom || demoAddDays(m, 6) >= callFrom) weeks.push(m); }
-    const hist = people.map(n => { const ws = weeks.map(m => trkEvalWeek(m, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n))); return { n, ws, pts: ws.reduce((a, w) => a + w.points, 0) }; }).sort((a, b) => a.pts - b.pts || a.n.localeCompare(b.n, 'th'));
+    const hist = people.map(n => { const ws = weeks.map(m => trkEvalWeek(m, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n), ovrMap.get(n + '|' + m))); return { n, ws, pts: ws.reduce((a, w) => a + w.points, 0) }; }).sort((a, b) => a.pts - b.pts || a.n.localeCompare(b.n, 'th'));
     html += `<div class="panel"><div class="panel-head"><h2>แต้มสะสม ${weeks.length} สัปดาห์ล่าสุด</h2><span class="hint">ถึงสัปดาห์ที่เลือก · คำนวณย้อนหลังเหมือนใช้กติกานี้มาตลอด (เริ่มตั้งแต่มีข้อมูลการโทร ${fmtThaiDate(callFrom)})${salesTo ? ' · License มีถึง ' + fmtThaiDate(salesTo) : ''}</span></div>
       <div class="table-x"><table class="team-table tk-table"><thead><tr><th style="text-align:left;">เซล</th>${weeks.map(m => `<th class="tk-dh">${demoDM(m)}<div class="dm-th-sub">–${demoDM(demoAddDays(m, 6))}</div></th>`).join('')}<th>แต้มรวม</th></tr></thead><tbody>
-      ${hist.map(h => `<tr><td style="text-align:left;white-space:nowrap;">${saleLabelHtml(h.n)}</td>${h.ws.map(w => { const R = TRK_RESULT[w.result]; return `<td class="tk-c ${w.result === 'fail' ? 'bad' : /^pass/.test(w.result) ? 'ok' : 'na'}" title="${escHtml(demoWeekLabel(w.mon) + ' · ' + R.t + ' · ผ่าน ' + w.passed + '/' + w.evaluated + ' วัน · License ' + w.lic)}"><div class="tk-mark">${w.result === 'fail' ? '-' + TRK_PENALTY : w.result === 'pass-lic' ? '✓ L' : w.result === 'pass-demo10' ? '✓ D' : w.result === 'pass' ? '✓' : w.result === 'off' ? 'ลา' : '…'}</div></td>`; }).join('')}
+      ${hist.map(h => `<tr><td style="text-align:left;white-space:nowrap;">${saleLabelHtml(h.n)}</td>${h.ws.map(w => { const R = TRK_RESULT[w.result]; return `<td class="tk-c ${trkIsFail(w.result) ? 'bad' : trkIsPass(w.result) ? 'ok' : 'na'}" title="${escHtml(demoWeekLabel(w.mon) + ' · ' + R.t + (w.ovr ? ' · เหตุผล: ' + (w.ovr.why || '') : '') + ' · ผ่าน ' + w.passed + '/' + w.evaluated + ' วัน · License ' + w.lic)}"><div class="tk-mark">${w.result === 'ovr-fail' ? '-' + TRK_PENALTY + ' A' : w.result === 'fail' ? '-' + TRK_PENALTY : w.result === 'ovr-pass' ? '✓ A' : w.result === 'pass-lic' ? '✓ L' : w.result === 'pass-demo10' ? '✓ D' : w.result === 'pass' ? '✓' : w.result === 'off' ? 'ลา' : '…'}</div></td>`; }).join('')}
         <td>${h.pts ? `<b class="dm-gap">${h.pts}</b>` : '<b>0</b>'}</td></tr>`).join('')}
-      </tbody></table></div><div class="dm-th-sub" style="margin-top:6px;">✓ ผ่าน · ✓ L ผ่านเพราะขายครบ ${TRK_LIC_WEEK} License · ✓ D ผ่านเพราะ Demo สะสมครบ ${TRK_DEMO_WEEK} · -${TRK_PENALTY} ไม่ผ่าน · … สัปดาห์ยังไม่จบ</div></div>`;
+      </tbody></table></div><div class="dm-th-sub" style="margin-top:6px;">✓ ผ่าน · ✓ L ผ่านเพราะขายครบ ${TRK_LIC_WEEK} License · ✓ D ผ่านเพราะ Demo สะสมครบ ${TRK_DEMO_WEEK} · ✓ A / -${TRK_PENALTY} A = Admin ปรับผล (ดูเหตุผลที่ช่อง) · -${TRK_PENALTY} ไม่ผ่าน · … สัปดาห์ยังไม่จบ</div></div>`;
   }
   html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall เฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
   body.innerHTML = html;
@@ -5248,4 +5308,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v38 2026-10-19 lead calls = all lead phones -->
+<!-- build: v39 2026-10-19 Tracking admin override -->
