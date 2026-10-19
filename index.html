@@ -4531,6 +4531,7 @@ function pipeDemoCell(l){
 // เป้า 1) Demo ที่ดำเนินการแล้ว 2 ร้าน/วัน  2) โทรออกหา Lead 50 สาย/วัน  3) ขายได้ 3 License/สัปดาห์
 // วันทำงาน (จ.–ศ.) ผ่าน = Demo ≥ 2 หรือ โทรหา Lead ≥ 50 · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันทำงานที่ไม่ผ่านได้
 // สิ้นสัปดาห์: ขายได้ ≥ 3 License หรือ Demo สะสม ≥ 10 ร้าน = ผ่านทั้งสัปดาห์ (หักล้าง) · ไม่ผ่าน = -1 แต้ม/สัปดาห์
+const TRK_DEMO_CALLS = 25;   // 1 Demo = 25 สาย (ผู้ใช้กำหนด 19 ต.ค. 2026) → Demo 1 + โทร 25 = ผ่าน
 const TRK_DEMO_DAY = 2, TRK_CALL_DAY = 50, TRK_LIC_WEEK = 3, TRK_DEMO_WEEK = 10, TRK_PENALTY = 1, TRK_HISTORY_WEEKS = 8;
 const TRK_EXCLUDE = new Set(['เยาวมาลย์ เกียรติเฉลิมพร']);   // Lead Team (คุมเกม) — ไม่อยู่ในตาราง Tracking
 let TRK_INIT = false;
@@ -4668,11 +4669,12 @@ function trkEvalWeek(mon, today, callMap, demoMap, licMap, callFrom, planMap, le
     if(wd >= 5){ o.state = 'weekend'; return o; }
     if(demo >= TRK_DEMO_DAY) o.state = 'pass-demo';
     else if(calls >= TRK_CALL_DAY) o.state = 'pass-call';
+    else if(demo * TRK_DEMO_CALLS + calls >= TRK_CALL_DAY) o.state = 'pass-mix';
     else if(lv) o.state = 'leave';
     else if(d === today) o.state = 'today';
     else if(callFrom && d < callFrom) o.state = 'nodata';
     else o.state = 'fail';
-    o.need = Math.max(0, TRK_DEMO_DAY - demo);
+    o.need = Math.max(0, Math.ceil((TRK_CALL_DAY - calls) / TRK_DEMO_CALLS) - demo);   // Demo ที่ยังขาด (คิดรวมสายที่โทรแล้ว)
     return o;
   });
   // ชดเชยด้วย Demo วันเสาร์–อาทิตย์ (ใช้กับวันที่ขาด Demo น้อยที่สุดก่อน)
@@ -4719,7 +4721,7 @@ function trkCell(o, n){
   const busy = LEAVE_BUSY === n + '|' + o.d ? ' busy' : '';
   const edit = lvAttr ? ' tk-edit' : '';
   if(st === 'leave') return `<td class="tk-c lv${edit}${busy}"${lvAttr} title="${escHtml(fmtThaiDate(o.d) + ' · ' + (o.lv === 'holiday' ? 'วันหยุด' : 'ลา') + ' — ไม่นับวันนี้')}"><div class="tk-mark">${o.lv === 'holiday' ? 'หยุด' : 'ลา'}</div>${o.d <= demoToday() ? `<div class="tk-nums">D ${o.demo} ☎ ${o.calls}</div>` : ''}</td>`;
-  const lbl = { 'pass-demo': 'ผ่าน (Demo)', 'pass-call': 'ผ่าน (โทร)', 'pass-comp': 'ผ่าน (ชดเชยจาก Demo เสาร์–อาทิตย์)', fail: 'ไม่ผ่าน', today: 'วันนี้ยังไม่ครบ', future: 'ยังไม่ถึง', weekend: 'เสาร์–อาทิตย์ (ไม่มีเป้า — Demo ใช้ชดเชยได้)', nodata: 'ยังไม่มีข้อมูลการโทร' }[st];
+  const lbl = { 'pass-demo': 'ผ่าน (Demo)', 'pass-call': 'ผ่าน (โทร)', 'pass-mix': `ผ่าน (Demo + โทร · 1 Demo = ${TRK_DEMO_CALLS} สาย)`, 'pass-comp': 'ผ่าน (ชดเชยจาก Demo เสาร์–อาทิตย์)', fail: 'ไม่ผ่าน', today: 'วันนี้ยังไม่ครบ', future: 'ยังไม่ถึง', weekend: 'เสาร์–อาทิตย์ (ไม่มีเป้า — Demo ใช้ชดเชยได้)', nodata: 'ยังไม่มีข้อมูลการโทร' }[st];
   const cls = /^pass/.test(st) ? 'ok' : st === 'fail' ? 'bad' : st === 'today' ? 'wait' : 'na';
   const tip = `${fmtThaiDate(o.d)} · ${lbl} · Demo ${o.demo}/${TRK_DEMO_DAY} · โทรหา Lead ${o.calls}/${TRK_CALL_DAY}${o.plan ? ` · นัด Demo ไว้ ${o.plan} ร้าน (${o.plans.map(r => r.shop || r.lid).join(', ')})` : ''}`;
   const planTag = o.plan ? `<div class="tk-plan">นัด ${o.plan}</div>` : '';
@@ -4760,8 +4762,8 @@ function renderTracking(){
   const leaveOf = n => d => lvMap.get(n + '|' + d) || (lvMap.has(TRK_HOLIDAY + '|' + d) ? 'holiday' : '');
   const evals = people.map(n => ({ n, t: teamOf(n), ph: salePhoneOf(n), w: trkEvalWeek(mon, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n)) }));
   const licNote = salesTo && salesTo < sun ? ` · ยอดขาย (RT) มีถึง ${fmtThaiDate(salesTo)} — License ของสัปดาห์นี้อาจยังไม่ครบ` : '';
-  sub.textContent = `${demoWeekLabel(mon)} · ${people.length} คน · เป้า: Demo ${TRK_DEMO_DAY} ร้าน/วัน หรือ โทรหา Lead ${TRK_CALL_DAY} สาย/วัน · ขาย ${TRK_LIC_WEEK} License หรือ Demo สะสม ${TRK_DEMO_WEEK} ร้าน/สัปดาห์ = ผ่านทั้งสัปดาห์${licNote}`;
-  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรออกหา Lead ≥ ${TRK_CALL_DAY} สาย</b> · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
+  sub.textContent = `${demoWeekLabel(mon)} · ${people.length} คน · เป้า: Demo ${TRK_DEMO_DAY} ร้าน/วัน หรือ โทรหา Lead ${TRK_CALL_DAY} สาย/วัน (1 Demo = ${TRK_DEMO_CALLS} สาย) · ขาย ${TRK_LIC_WEEK} License หรือ Demo สะสม ${TRK_DEMO_WEEK} ร้าน/สัปดาห์ = ผ่านทั้งสัปดาห์${licNote}`;
+  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรออกหา Lead ≥ ${TRK_CALL_DAY} สาย</b> หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
 
   let html = '';
   if(view === 'day'){
@@ -4781,7 +4783,7 @@ function renderTracking(){
       <div class="table-x"><table class="team-table tk-table"><thead><tr><th style="text-align:left;">เซล</th><th style="min-width:120px;">Demo (ดำเนินการแล้ว)<div class="dm-th-sub">เป้า ${TRK_DEMO_DAY}</div></th><th style="min-width:120px;">โทรหา Lead<div class="dm-th-sub">เป้า ${TRK_CALL_DAY}</div></th><th>ผลวันนี้</th><th>Demo สะสม<div class="dm-th-sub">จ.–วันนี้ · เป้า ${TRK_DEMO_WEEK}</div></th><th>โทรสะสม<div class="dm-th-sub">จ.–วันนี้</div></th><th>License สัปดาห์นี้<div class="dm-th-sub">เป้า ${TRK_LIC_WEEK}</div></th><th style="text-align:left;">ร้านที่ Demo</th></tr></thead><tbody>
       ${rows.map(({ e, o, cumD, cumC }) => {
         const st = o.state;
-        const res = st === 'leave' ? `<span class="tk-pill na">${o.lv === 'holiday' ? 'วันหยุด' : 'ลา'}</span>` : isWe ? (o.demo ? `<span class="tk-pill na">+${o.demo} Demo ไว้ชดเชย</span>` : '') : /^pass/.test(st) ? `<span class="tk-pill ok">✓ ${st === 'pass-demo' ? 'ผ่านด้วย Demo' : st === 'pass-call' ? 'ผ่านด้วยการโทร' : 'ผ่าน (ชดเชย)'}</span>` : st === 'fail' ? `<span class="tk-pill bad">✗ ไม่ผ่าน</span>` : st === 'today' ? `<span class="tk-pill wait">ยังไม่ครบ</span>` : st === 'nodata' ? '<span class="dm-th-sub">ไม่มีข้อมูลการโทร</span>' : '<span class="dm-th-sub">ยังไม่ถึง</span>';
+        const res = st === 'leave' ? `<span class="tk-pill na">${o.lv === 'holiday' ? 'วันหยุด' : 'ลา'}</span>` : isWe ? (o.demo ? `<span class="tk-pill na">+${o.demo} Demo ไว้ชดเชย</span>` : '') : /^pass/.test(st) ? `<span class="tk-pill ok">✓ ${st === 'pass-demo' ? 'ผ่านด้วย Demo' : st === 'pass-call' ? 'ผ่านด้วยการโทร' : st === 'pass-mix' ? 'ผ่านด้วย Demo + โทร' : 'ผ่าน (ชดเชย)'}</span>` : st === 'fail' ? `<span class="tk-pill bad">✗ ไม่ผ่าน</span>` : st === 'today' ? `<span class="tk-pill wait">ยังไม่ครบ</span>` : st === 'nodata' ? '<span class="dm-th-sub">ไม่มีข้อมูลการโทร</span>' : '<span class="dm-th-sub">ยังไม่ถึง</span>';
         return `<tr><td style="text-align:left;white-space:nowrap;"><b>${saleLabelHtml(e.n)}</b>${e.ph ? `<div class="dm-th-sub">☎ ${fmtPhoneTH(e.ph)}</div>` : '<div class="dm-th-sub">ไม่มีเบอร์ในชีทเบอร์เซล</div>'}</td>
           <td><b class="${o.demo >= TRK_DEMO_DAY ? 'dm-ok' : ''}">${o.demo}</b>${trkMeter(o.demo, TRK_DEMO_DAY)}</td>
           <td><b class="${o.calls >= TRK_CALL_DAY ? 'dm-ok' : ''}">${o.calls}</b>${trkMeter(o.calls, TRK_CALL_DAY)}</td>
@@ -5242,4 +5244,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v36 2026-10-19 Forecast QT sum + Mon-Sun -->
+<!-- build: v37 2026-10-19 Tracking 1 Demo = 25 calls -->
