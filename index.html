@@ -4014,7 +4014,8 @@ function renderCalls(){
   // ---- Lead ที่ยังไม่เคยโทร (ใหม่สุดก่อน) + ใครโทรมากที่สุด ----
   const nv = never.filter(l => !l.early).sort((a, b) => a.d < b.d ? 1 : -1);
   const leadPhones = ALL_LEAD_PHONES;
-  CALL_ROWS.forEach(c => { if(c.d < from || c.d > to || c.dir === 'I') return; if(leadPhones.has(c.remote)) byCaller.get(c.local).leadCalls++; });
+  const lcSet = leadCallSet();
+  CALL_ROWS.forEach(c => { if(c.d < from || c.d > to) return; if(lcSet.has(c)) byCaller.get(c.local).leadCalls++; });
   const callers = [...byCaller.values()].sort((a, b) => (b.o + b.i) - (a.o + a.i));
   html += `<div class="sd-grid2"><div class="panel"><div class="panel-head"><h2>Lead ที่ยังไม่เคยโทร</h2><span class="hint">${nv.length} Lead · ใหม่สุดก่อน</span></div>
       ${nv.length ? `<div class="dm-scroll" style="max-height:420px;">${callLeadList(nv, true)}</div>` : '<div class="dm-th-sub">ไม่มี — โทรครบทุก Lead แล้ว</div>'}</div>
@@ -4068,14 +4069,32 @@ function callLeadList(list, showSale){
 }
 
 const CALL_DAY_TARGET = 50;   // เป้าโทรหา Lead ต่อคนต่อวัน (ผู้ใช้กำหนด 16 ต.ค. 2026)
+// "สายที่นับว่าโทรหา Lead" (ผู้ใช้กำหนด 20 ต.ค. 2026):
+//   1) โทรออก ที่ปลายทางเป็นเบอร์ของ Lead  2) โทรเข้า จากเบอร์ของ Lead ที่เบอร์เซลเดียวกันเคยโทรออกหาภายใน CALL_BACK_DAYS วันก่อนหน้า (ลูกค้าโทรกลับ)
+const CALL_BACK_DAYS = 30;
+let LEAD_CALL_SET = null, LEAD_CALL_KEY = null;
+function leadCallSet(){
+  const key = [CALL_ROWS, CALL_ROWS ? CALL_ROWS.length : 0, ALL_LEAD_PHONES];
+  if(LEAD_CALL_SET && LEAD_CALL_KEY && key.every((v, i) => v === LEAD_CALL_KEY[i])) return LEAD_CALL_SET;
+  const set = new Set(), lastOut = new Map();   // เบอร์เซล|เบอร์ลูกค้า → วันที่โทรออกล่าสุด
+  (CALL_ROWS || []).slice().sort((a, b) => (a.d + a.t) < (b.d + b.t) ? -1 : (a.d + a.t) > (b.d + b.t) ? 1 : 0).forEach(c => {
+    if(!ALL_LEAD_PHONES.has(c.remote)) return;
+    const k = c.local + '|' + c.remote;
+    if(c.dir !== 'I'){ set.add(c); lastOut.set(k, c.d); return; }
+    const lo = lastOut.get(k);
+    if(lo && lo >= demoAddDays(c.d, -CALL_BACK_DAYS)) set.add(c);
+  });
+  LEAD_CALL_SET = set; LEAD_CALL_KEY = key;
+  return set;
+}
 // ตารางการโทรต่อวัน — นับเฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead (เบอร์หลัก/สำรองใน API Lead) ตามวันที่โทร
 function callsPerDayPanel(from, to, inScope, scope){
-  const leadPhones = ALL_LEAD_PHONES;
+  const lcSet = leadCallSet();
   const days = [];
   for(let d = from; d && d <= to && days.length < 92; d = demoAddDays(d, 1)) days.push(d);
   const per = new Map(), dayTot = {};
   CALL_ROWS.forEach(c => {
-    if(c.dir === 'I' || c.d < from || c.d > to || !leadPhones.has(c.remote)) return;
+    if(c.d < from || c.d > to || !lcSet.has(c)) return;
     const s = SALES_PHONES.get(c.local);
     const name = s && s.name ? s.name : '';
     if(name ? !inScope(name) : scope !== '__all') return;
@@ -4108,12 +4127,12 @@ function callsPerDayPanel(from, to, inScope, scope){
   const total = ppl.reduce((a, e) => a + e.total, 0);
   const teamHit = ppl.reduce((a, e) => a + workDays.filter(d => (e.by[d] || 0) >= T).length, 0);
   const totRow = `<tr class="dm-total"><td class="cl-sticky" style="text-align:left;"><b>รวม</b><div class="dm-th-sub">${ppl.length} คน · เป้า ${fmtNum(T * ppl.length)} สาย/วัน</div></td><td><b>${fmtNum(total)}</b></td><td>${avgCell(ppl.length ? total / nW / ppl.length : 0)}<div class="dm-th-sub">ต่อคน</div></td><td>${teamHit}<span class="dm-th-sub">/${workDays.length * ppl.length} คน·วัน</span></td><td></td>${days.map(d => `<td class="cl-hm">${dayTot[d] ? `<b>${dayTot[d]}</b>` : ''}</td>`).join('')}</tr>`;
-  return `<div class="panel"><div class="panel-head"><h2>การโทรต่อวัน (โทรออกหา Lead) · เป้า ${T} สาย/คน/วัน</h2><span class="hint">ตามวันที่โทร ${fmtThaiDate(from)} – ${fmtThaiDate(to)} · นับเฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead · ชี้ที่ช่องเพื่อดูรายละเอียด</span></div>
+  return `<div class="panel"><div class="panel-head"><h2>การโทรต่อวัน (โทรหา Lead) · เป้า ${T} สาย/คน/วัน</h2><span class="hint">ตามวันที่โทร ${fmtThaiDate(from)} – ${fmtThaiDate(to)} · นับสายโทรออกหาเบอร์ของ Lead + สายที่ Lead โทรกลับมา (เคยโทรออกหาเบอร์นั้นภายใน ${CALL_BACK_DAYS} วัน) · ชี้ที่ช่องเพื่อดูรายละเอียด</span></div>
     <div class="sd-legend"><span><i style="background:#2F7D4F"></i>ถึงเป้า (${T}+ สาย)</span><span><i style="background:#F2C94C"></i>${Math.ceil(T / 2)}–${T - 1} สาย</span><span><i style="background:#F6CFC7"></i>ต่ำกว่า ${Math.ceil(T / 2)} สาย</span><span><i style="background:#fff;border:1px solid #E7B3AA"></i>0 = วันทำงานที่ไม่ได้โทรหา Lead</span></div>
     ${ppl.length ? `<div class="table-x"><table class="team-table cl-perday"><thead><tr><th class="cl-sticky" style="text-align:left;">เซล</th><th>รวม</th><th style="min-width:90px;">เฉลี่ย/วัน<div class="dm-th-sub">เป้า ${T}</div></th><th>วันที่ถึงเป้า</th><th>คุยเกิน ${CALL_LONG_SEC} วิ</th>${head}</tr></thead>
       <tbody>${totRow}${rows}</tbody></table></div>
       <div class="dm-th-sub" style="margin-top:6px;">เฉลี่ย/วัน = สายรวม ÷ ${nW} วันทำงาน (จันทร์–ศุกร์ที่มีการโทรหา Lead · เสาร์–อาทิตย์นับเฉพาะวันที่โทรกันอย่างน้อย 1 ใน 3 ของทีม) · วันที่ถึงเป้า = จำนวนวันทำงานที่โทรหา Lead ได้ ${T} สายขึ้นไป</div>`
-      : '<div class="dm-th-sub">ไม่มีสายโทรออกหา Lead ในช่วงวันที่เลือก</div>'}</div>`;
+      : '<div class="dm-th-sub">ไม่มีสายโทรหา Lead ในช่วงวันที่เลือก</div>'}</div>`;
 }
 
 // ---- ชื่อเล่นเซล: ชีทเบอร์เซล → PEAK TAG ใน MSTR (Sale/xxx) → SALES_NICK_NAME (ผู้ใช้ขอ 19 ต.ค. 2026) ----
@@ -4663,9 +4682,9 @@ function trkDayOptions(mon, today){
 function trkLeadCalls(){
   const out = new Map();   // ชื่อเซล → {date: สาย}
   if(!CALL_ROWS) return out;
-  const leadPhones = ALL_LEAD_PHONES;
+  const lcSet = leadCallSet();   // โทรออกหา Lead + Lead โทรกลับ
   CALL_ROWS.forEach(c => {
-    if(c.dir === 'I' || !leadPhones.has(c.remote)) return;
+    if(!lcSet.has(c)) return;
     const s = SALES_PHONES.get(c.local); if(!s || !s.name) return;
     const m = out.get(s.name) || out.set(s.name, {}).get(s.name);
     m[c.d] = (m[c.d] || 0) + 1;
@@ -4822,7 +4841,7 @@ function renderTracking(){
   const evals = people.map(n => ({ n, t: teamOf(n), ph: salePhoneOf(n), w: trkEvalWeek(mon, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n), ovrMap.get(n + '|' + mon)) }));
   const licNote = salesTo && salesTo < sun ? ` · ยอดขาย (RT) มีถึง ${fmtThaiDate(salesTo)} — License ของสัปดาห์นี้อาจยังไม่ครบ` : '';
   sub.textContent = `${demoWeekLabel(mon)} · ${people.length} คน · เป้า: Demo ${TRK_DEMO_DAY} ร้าน/วัน หรือ โทรหา Lead ${TRK_CALL_DAY} สาย/วัน (1 Demo = ${TRK_DEMO_CALLS} สาย) · ขาย ${TRK_LIC_WEEK} License หรือ Demo สะสม ${TRK_DEMO_WEEK} ร้าน/สัปดาห์ = ผ่านทั้งสัปดาห์${licNote}`;
-  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรออกหา Lead ≥ ${TRK_CALL_DAY} สาย</b> หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
+  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรหา Lead ≥ ${TRK_CALL_DAY} สาย</b> (โทรออก + สายที่ Lead โทรกลับมา) หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
 
   let html = '';
   if(view === 'day'){
@@ -4874,7 +4893,7 @@ function renderTracking(){
           <input type="text" id="tk-ovr-why" maxlength="300" placeholder="เหตุผล (จำเป็น) เช่น ปิดได้ 3 License วันเสาร์" value="${escHtml(dr.why)}">`; })()}
           <button class="btn btn-primary btn-sm" id="tk-ovr-save">${OVR_BUSY ? 'กำลังบันทึก…' : 'บันทึก'}</button><button class="btn btn-ghost btn-sm" id="tk-ovr-cancel">ยกเลิก</button></div></td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
-      <div class="sd-legend" style="margin-top:8px;"><span>✓ ผ่าน · ✓* ผ่านด้วย Demo ชดเชยจากเสาร์–อาทิตย์ · ✗ ไม่ผ่าน · … วันนี้ยังไม่ครบ · D = Demo ที่ดำเนินการแล้ว · ☎ = สายโทรออกหา Lead · +n = Demo วันเสาร์–อาทิตย์ · นัด n = นัด Demo ที่ยังไม่ถึง/ยังไม่มีผล · ลา / หยุด = ไม่นับวันนั้น</span></div>
+      <div class="sd-legend" style="margin-top:8px;"><span>✓ ผ่าน · ✓* ผ่านด้วย Demo ชดเชยจากเสาร์–อาทิตย์ · ✗ ไม่ผ่าน · … วันนี้ยังไม่ครบ · D = Demo ที่ดำเนินการแล้ว · ☎ = สายโทรหา Lead (โทรออก + Lead โทรกลับ) · +n = Demo วันเสาร์–อาทิตย์ · นัด n = นัด Demo ที่ยังไม่ถึง/ยังไม่มีผล · ลา / หยุด = ไม่นับวันนั้น</span></div>
       ${rules}${trkOvrLog(mon)}</div>`;
 
     // ---- แต้มสะสมย้อนหลัง ----
@@ -4887,7 +4906,7 @@ function renderTracking(){
         <td>${h.pts ? `<b class="dm-gap">${h.pts}</b>` : '<b>0</b>'}</td></tr>`).join('')}
       </tbody></table></div><div class="dm-th-sub" style="margin-top:6px;">✓ ผ่าน · ✓ L ผ่านเพราะขายครบ ${TRK_LIC_WEEK} License · ✓ D ผ่านเพราะ Demo สะสมครบ ${TRK_DEMO_WEEK} · ✓ A / -${TRK_PENALTY} A = Admin ปรับผล (ดูเหตุผลที่ช่อง) · -${TRK_PENALTY} ไม่ผ่าน · … สัปดาห์ยังไม่จบ</div></div>`;
   }
-  html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall เฉพาะสายโทรออกที่ปลายทางเป็นเบอร์ของ Lead (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
+  html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall: สายโทรออกที่ปลายทางเป็นเบอร์ของ Lead + สายโทรเข้าจากเบอร์ Lead ที่เซลเคยโทรออกหาภายใน ${CALL_BACK_DAYS} วัน (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
   body.innerHTML = html;
 }
 // ===== ใบเสนอราคา (QT) — ไฟล์ส่วนแบ่งการขาย แท็บ QT (ผู้ใช้เพิ่ม 19 ต.ค. 2026) =====
@@ -5308,4 +5327,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v39 2026-10-19 Tracking admin override -->
+<!-- build: v40 2026-10-20 count lead callbacks -->
