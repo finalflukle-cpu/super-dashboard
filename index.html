@@ -578,6 +578,8 @@
   .dm-col i{display:block;width:100%;}
   .dm-day-l{font-size:11.5px;color:var(--text-secondary);text-align:center;margin-top:4px;line-height:1.25;}
   .dm-day.today .dm-day-l{color:var(--text-primary);font-weight:700;}
+  .dm-days-m{min-width:640px;gap:3px;} .dm-days-m .dm-col{width:80%;} .dm-days-m .dm-day-l{font-size:10px;} .dm-day.we .dm-day-l{color:#A0A098;}
+  .dm-table th.dm-wk{min-width:44px;text-align:center !important;}
   .dm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
   .dm-scroll{max-height:260px;overflow:auto;}
   .dm-foot{font-size:12px;color:var(--text-secondary);margin:4px 0 24px 0;line-height:1.6;}
@@ -750,7 +752,9 @@
         <p id="dm-sub">กำลังดึงข้อมูลการนัดหมาย…</p>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="filter-group"><label>สัปดาห์ (จันทร์–อาทิตย์)</label><select id="dm-week"></select></div>
+        <div class="filter-group"><label>มุมมอง</label><select id="dm-view"><option value="week">รายสัปดาห์</option><option value="month">รายเดือน</option></select></div>
+        <div class="filter-group" id="dm-week-wrap"><label>สัปดาห์ (จันทร์–อาทิตย์)</label><select id="dm-week"></select></div>
+        <div class="filter-group" id="dm-month-wrap" style="display:none;"><label>เดือน</label><select id="dm-month"></select></div>
         <div class="filter-group"><label>ทีม</label><select id="dm-team"></select></div>
       </div>
     </div>
@@ -3610,6 +3614,17 @@ function initDemo(){
   }
   wk.innerHTML = opts.join('');
   wk.addEventListener('change', renderDemo);
+  // รายเดือน (ผู้ใช้เพิ่ม 20 ต.ค. 2026) — 12 เดือนล่าสุด
+  const ms = document.getElementById('dm-month'), t0 = demoToday();
+  const mOpts = [];
+  for(let i = 0; i < 12; i++){
+    const dt = new Date(Date.UTC(+t0.slice(0, 4), +t0.slice(5, 7) - 1 - i, 1));
+    const v = dt.toISOString().slice(0, 7);
+    mOpts.push(`<option value="${v}">${DEMO_TH_MON[dt.getUTCMonth()]} ${dt.getUTCFullYear() + 543}${i === 0 ? ' (เดือนนี้)' : ''}</option>`);
+  }
+  ms.innerHTML = mOpts.join('');
+  ms.addEventListener('change', () => { DEMO_OPEN = null; renderDemo(); });
+  document.getElementById('dm-view').addEventListener('change', () => { DEMO_OPEN = null; renderDemo(); });
   document.getElementById('dm-team').addEventListener('change', renderDemo);
   document.getElementById('dm-body').addEventListener('click', e => {
     const tr = e.target.closest('tr[data-dm-sale]');
@@ -3665,6 +3680,10 @@ function renderDemo(){
     return;
   }
 
+  const view = document.getElementById('dm-view').value || 'week';
+  document.getElementById('dm-week-wrap').style.display = view === 'month' ? 'none' : '';
+  document.getElementById('dm-month-wrap').style.display = view === 'month' ? '' : 'none';
+  if(view === 'month'){ renderDemoMonth(body, sub); return; }
   const mon = document.getElementById('dm-week').value || demoMonday(demoToday());
   const sun = demoAddDays(mon, 6), nMon = demoAddDays(mon, 7), nSun = demoAddDays(mon, 13);
   const today = demoToday();
@@ -3788,6 +3807,107 @@ function renderDemo(){
   const guessed = DEMO_ROWS.filter(r => r.saleGuess).length;
   if(guessed) notes.push(`${guessed} นัดช่อง Sale ที่ดูแลว่าง — ใช้ชื่อผู้เข้าร่วมคนแรกแทน`);
   html += `<div class="dm-foot">นัดจุดประสงค์ Demo ${fmtNum(DEMO_ROWS.length)} รายการ${DEMO_STATE.total ? ` (จากนัดทุกประเภท ${fmtNum(DEMO_STATE.total)})` : ''} · จาก${DEMO_STATE.src === 'sheet' ? 'ชีทการนัดหมาย' : ' API การนัดหมาย'}${notes.length ? '<br>' + notes.join('<br>') : ''}</div>`;
+  body.innerHTML = html;
+}
+// ---- มุมมองรายเดือน: ภาพรวม Demo ทั้งเดือน (นับเฉพาะ Online · On Site · Visit Demo) ----
+function renderDemoMonth(body, sub){
+  const ym = document.getElementById('dm-month').value || demoToday().slice(0, 7);
+  const first = ym + '-01';
+  const nDays = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+  const last = ym + '-' + String(nDays).padStart(2, '0');
+  const today = demoToday();
+  const isCur = today >= first && today <= last;
+  const elapsed = isCur ? Math.round((Date.parse(today) - Date.parse(first)) / 864e5) + 1 : nDays;   // วันที่ผ่านไปแล้วในเดือน
+  const weeksElapsed = elapsed / 7;
+  const T = DEMO_WEEK_TARGET;
+  const scope = document.getElementById('dm-team').value || 'mine';
+  const [yy, mm] = ym.split('-').map(Number);
+  const mLabel = `${DEMO_TH_MON[mm - 1]} ${yy + 543}`;
+  // สัปดาห์ (จ.–อา.) ที่คาบเกี่ยวเดือนนี้ — นับเฉพาะวันที่อยู่ในเดือน
+  const weeks = [];
+  for(let m = demoMonday(first); m <= last; m = demoAddDays(m, 7)) weeks.push({ mon: m, from: m < first ? first : m, to: demoAddDays(m, 6) > last ? last : demoAddDays(m, 6) });
+  sub.textContent = `เดือน ${mLabel}${isCur ? ` · ถึงวันที่ ${+today.slice(8)} (ผ่านไป ${elapsed}/${nDays} วัน)` : ''} · เป้า ${T} Demo/คน/สัปดาห์`
+    + (DEMO_STATE.state === 'error' ? ' · รอบล่าสุดดึงไม่สำเร็จ แสดงข้อมูลเดิม' : '');
+
+  const per = new Map();
+  const ensure = n => { let e = per.get(n); if(!e){ e = { n, t: teamOf(n), done: 0, cancel: 0, pend: 0, other: 0, online: 0, onsite: 0, visit: 0, rep: 0, wk: weeks.map(() => 0), rows: [] }; per.set(n, e); } return e; };
+  knownSaleNames().forEach(n => { if(activeTeams().includes(teamOf(n))) ensure(n); });
+  const days = Array.from({ length: nDays }, (_, i) => ({ d: demoAddDays(first, i), done: 0, cancel: 0, pend: 0, other: 0 }));
+  const notCounted = [];
+  DEMO_ROWS.forEach(r => {
+    if(!r.d || r.d < first || r.d > last) return;
+    const e = ensure(r.sale);
+    e.rows.push(r);
+    if(!DEMO_COUNTED.has(r.kind)){ e.rep++; notCounted.push(r); return; }
+    const k = r.st === 'done' ? 'done' : r.st === 'cancel' ? 'cancel' : r.st === 'pending' ? 'pend' : 'other';
+    e[k]++;
+    if(r.st === 'done'){ e[r.kind]++; const wi = weeks.findIndex(w => r.d >= w.from && r.d <= w.to); if(wi >= 0) e.wk[wi]++; }
+    const day = days[+r.d.slice(8) - 1]; if(day) day[k]++;
+  });
+  const people = [...per.values()].filter(e => demoInScope(e.t, scope));
+  people.sort((a, b) => b.done - a.done || b.pend - a.pend || a.n.localeCompare(b.n, 'th'));
+  const sum = k => people.reduce((a, e) => a + e[k], 0);
+  const nP = people.length;
+  const avgWk = e => weeksElapsed ? e.done / weeksElapsed : 0;
+  const onPace = people.filter(e => avgWk(e) >= T).length;
+  const overdue = people.reduce((a, e) => a + e.rows.filter(r => r.d < today && r.st === 'pending' && DEMO_COUNTED.has(r.kind)).length, 0);
+  const teamAvg = nP && weeksElapsed ? sum('done') / nP / weeksElapsed : 0;
+
+  let html = `<div class="sd-tiles">
+    ${sdTile(`Demo สำเร็จ (${mLabel})`, fmtNum(sum('done')), ' ', `Online <b>${sum('online')}</b> · On Site <b>${sum('onsite')}</b> · Visit <b>${sum('visit')}</b>`, `${nP} คน${isCur ? ` · ${elapsed} วันแรกของเดือน` : ''}`)}
+    ${sdTile('เฉลี่ยต่อคนต่อสัปดาห์', teamAvg.toFixed(1), ' ', `เป้า ${T} Demo/คน/สัปดาห์`, `คิดจาก ${weeksElapsed.toFixed(1)} สัปดาห์${isCur ? 'ที่ผ่านไป' : 'ของเดือน'}`)}
+    ${sdTile(`เฉลี่ยถึงเป้า ${T}/สัปดาห์`, `${onPace}/${nP} คน`, ' ', nP ? `${Math.round(onPace / nP * 100)}% ของทีม` : '', '')}
+    ${sdTile('ยกเลิก', fmtNum(sum('cancel')), ' ', (sum('done') + sum('cancel')) ? `${Math.round(sum('cancel') / (sum('done') + sum('cancel')) * 100)}% ของนัดที่มีผลแล้ว` : '', '')}
+    ${sdTile('รอผล (สถานะยังว่าง)', fmtNum(sum('pend')), ' ', overdue ? `<b>${overdue}</b> นัดเลยวันนัดแล้วแต่ยังไม่อัปเดตผล` : 'ไม่มีนัดที่เลยวันแล้วค้างอัปเดต', sum('other') ? `สถานะอื่นๆ ${sum('other')} นัด` : '')}
+    ${sdTile('นัดที่ไม่นับ (เช่น Repeat)', fmtNum(sum('rep')), ' ', '', '')}
+  </div>`;
+
+  const wkHead = weeks.map((w, i) => `<th class="dm-wk" title="${escHtml(demoDM(w.from) + ' – ' + demoDM(w.to))}">ส.${i + 1}<div class="dm-th-sub">${+w.from.slice(8)}–${+w.to.slice(8)}</div></th>`).join('');
+  const NC = 9 + weeks.length;
+  html += `<div class="panel"><div class="panel-head"><h2>ภาพรวมรายเซล · ${mLabel}</h2><span class="hint">แตะชื่อเพื่อดูรายการนัดทั้งเดือน · ส.1, ส.2 … = Demo สำเร็จแต่ละสัปดาห์ (จ.–อา. เฉพาะวันที่อยู่ในเดือน)</span></div>
+    <div class="table-x"><table class="team-table dm-table"><thead><tr><th style="text-align:left;">เซล</th><th class="dm-team" style="text-align:left;">ทีม</th>
+      <th>สำเร็จ</th><th>ยกเลิก</th><th>รอผล</th><th>Online · On Site · Visit</th>${wkHead}<th>เฉลี่ย/สัปดาห์<div class="dm-th-sub">เป้า ${T}</div></th><th>ไม่นับ</th></tr></thead><tbody>
+    ${people.map(e => {
+      const open = DEMO_OPEN === e.n, a = avgWk(e);
+      let tr = `<tr data-dm-sale="${escHtml(e.n)}" class="dm-row${open ? ' open' : ''}${a >= T ? ' dm-hit' : ''}">
+        <td class="dm-name" style="text-align:left;"><span class="dm-caret">${open ? '▾' : '▸'}</span> ${saleLabelHtml(e.n)}</td>
+        <td class="dm-team" style="text-align:left;"><span class="team-pill sm">${escHtml(e.t)}</span></td>
+        <td><b>${e.done}</b></td><td>${e.cancel || '–'}</td><td>${e.pend || '–'}${e.other ? ` <span class="dm-th-sub">+${e.other} อื่นๆ</span>` : ''}</td>
+        <td><span class="dm-th-sub">${e.online} · ${e.onsite} · ${e.visit}</span></td>
+        ${e.wk.map((v, i) => `<td class="${weeks[i].from > today ? 'dm-th-sub' : v >= T ? 'dm-ok' : ''}">${weeks[i].from > today ? '–' : v}</td>`).join('')}
+        <td><b class="${a >= T ? 'dm-ok' : 'dm-gap'}">${a.toFixed(1)}</b></td><td>${e.rep || '–'}</td></tr>`;
+      if(open){
+        const rows = e.rows.slice().sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : 0);
+        tr += `<tr class="dm-detail"><td colspan="${NC}">${rows.length ? demoListHtml(rows, first, last, false, '') : '<span class="dm-th-sub">ไม่มีนัดในเดือนนี้</span>'}</td></tr>`;
+      }
+      return tr;
+    }).join('')}
+    <tr class="dm-total"><td style="text-align:left;"><b>รวม ${nP} คน</b></td><td class="dm-team"></td><td><b>${sum('done')}</b></td><td>${sum('cancel')}</td><td>${sum('pend')}</td><td><span class="dm-th-sub">${sum('online')} · ${sum('onsite')} · ${sum('visit')}</span></td>
+      ${weeks.map((w, i) => `<td><b>${w.from > today ? '–' : people.reduce((x, e) => x + e.wk[i], 0)}</b></td>`).join('')}<td><b>${teamAvg.toFixed(1)}</b></td><td>${sum('rep')}</td></tr>
+    </tbody></table></div>
+    <div class="dm-legend"><span><b>เฉลี่ย/สัปดาห์</b> = Demo สำเร็จ ÷ จำนวนสัปดาห์${isCur ? 'ที่ผ่านไปแล้ว' : 'ในเดือน'} (${elapsed} วัน ÷ 7)</span><span>สีเขียว = เฉลี่ยถึงเป้า ${T}</span></div>
+  </div>`;
+
+  // Demo รายวันทั้งเดือน
+  const maxDay = Math.max(1, ...days.map(x => x.done + x.cancel + x.pend + x.other));
+  html += `<div class="panel"><div class="panel-head"><h2>Demo รายวัน · ${mLabel}</h2><span class="hint">ทีมที่เลือก · นับเฉพาะ Online · On Site · Visit Demo</span></div>
+    <div class="sd-legend"><span><i style="background:var(--success)"></i>สำเร็จ</span><span><i style="background:var(--danger)"></i>ยกเลิก</span><span><i style="background:#C9C9C0"></i>ยังไม่อัปเดต / อื่นๆ</span></div>
+    <div class="table-x"><div class="dm-days dm-days-m" style="grid-template-columns:repeat(${nDays},1fr);">${days.map(x => {
+      const scale = v => (v / maxDay * 100) + '%';
+      const tot = x.done + x.cancel + x.pend + x.other;
+      const wd = (new Date(x.d + 'T00:00:00Z').getUTCDay() + 6) % 7;
+      return `<div class="dm-day${x.d === today ? ' today' : ''}${wd >= 5 ? ' we' : ''}" title="${escHtml(DEMO_TH_DOW[wd] + ' ' + demoDM(x.d) + ' · สำเร็จ ' + x.done + ' · ยกเลิก ' + x.cancel + ' · ยังไม่อัปเดต ' + (x.pend + x.other))}"><div class="dm-day-n">${tot || ''}</div><div class="dm-col">
+        <i style="height:${scale(x.pend + x.other)};background:#C9C9C0"></i><i style="height:${scale(x.cancel)};background:var(--danger)"></i><i style="height:${scale(x.done)};background:var(--success)"></i></div>
+        <div class="dm-day-l">${DEMO_TH_DOW[wd]}<br>${+x.d.slice(8)}</div></div>`;
+    }).join('')}</div></div></div>`;
+
+  // นัดที่ไม่นับ
+  const ncScope = notCounted.filter(r => demoInScope(teamOf(r.sale), scope)).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const byType = {}; ncScope.forEach(r => { byType[r.type] = (byType[r.type] || 0) + 1; });
+  html += `<div class="panel"><div class="panel-head"><h2>นัดที่ไม่นับเป็น Demo</h2><span class="hint">${mLabel} · ${ncScope.length} นัด</span></div>
+    ${Object.keys(byType).length ? `<div class="dm-chips">${Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span class="team-chip">${escHtml(t)} <b>${n}</b></span>`).join('')}</div>` : ''}
+    ${ncScope.length ? `<div class="dm-scroll">${demoListHtml(ncScope, first, last, true, '')}</div>` : '<div class="dm-th-sub">ไม่มี</div>'}</div>`;
+  html += `<div class="dm-foot">นัดจุดประสงค์ Demo ${fmtNum(DEMO_ROWS.length)} รายการ · จาก${DEMO_STATE.src === 'sheet' ? 'ชีทการนัดหมาย' : ' API การนัดหมาย'} · นับตามวันที่นัดหมาย</div>`;
   body.innerHTML = html;
 }
 function demoListHtml(rows, mon, sun, showSale, nxName){
@@ -3963,7 +4083,7 @@ function renderCalls(){
     const first = out[0];
     const lag = first ? Math.round((Date.parse(first.d) - Date.parse(l.d)) / 864e5) : null;
     const all = cs.slice().sort((a, b) => (a.d + a.t) < (b.d + b.t) ? -1 : 1);
-    return Object.assign({}, l, { all, long: out.filter(c => c.dur > CALL_LONG_SEC).length, n: out.length, inc, talk: out.reduce((a, c) => a + c.dur, 0), lag, first, callers: [...new Set(out.map(c => c.local))], noPhone: !l.p1 && !l.p2, early: cover && l.d < cover });
+    return Object.assign({}, l, { all, long: out.filter(c => c.dur >= CALL_LONG_SEC).length, n: out.length, inc, talk: out.reduce((a, c) => a + c.dur, 0), lag, first, callers: [...new Set(out.map(c => c.local))], noPhone: !l.p1 && !l.p2, early: cover && l.d < cover });
   });
   const withPh = leads.filter(l => !l.noPhone);
   const called = withPh.filter(l => l.n > 0), never = withPh.filter(l => l.n === 0);
@@ -4002,7 +4122,7 @@ function renderCalls(){
         <td class="dm-team" style="text-align:left;">${e.t ? `<span class="team-pill sm ${teamBadgeClass(e.t)}">${escHtml(e.t)}</span>` : ''}</td>
         <td>${e.leads}</td><td>${e.called} <span class="dm-th-sub">${pct(e.called, e.leads)}</span></td><td>${e.never ? `<span class="dm-gap">${e.never}</span>` : '<span class="dm-ok">0</span>'}</td>
         <td>${bar(e)}</td><td>${(e.calls / e.leads).toFixed(1)}</td><td>${Math.round(e.talk / 60)} นาที</td><td>${(() => { const ps = byCaller.get(salePhoneOf(e.n)); return ps ? `<b>${fmtNum(ps.o + ps.i)}</b> <span class="dm-th-sub">ออก ${ps.o} · เข้า ${ps.i}</span>` : '–'; })()}</td></tr>`;
-      if(open) tr += `<tr class="dm-detail"><td colspan="9"><div class="cl-legend"><span class="cl-chip long">คุยเกิน ${CALL_LONG_SEC} วิ</span><span class="cl-chip short">${CALL_LONG_SEC} วิหรือน้อยกว่า (ไม่รับ / วางสายเร็ว)</span><span class="cl-chip long in">↙ ลูกค้าโทรเข้า</span></div>${callLeadList(e.list)}</td></tr>`;
+      if(open) tr += `<tr class="dm-detail"><td colspan="9"><div class="cl-legend"><span class="cl-chip long">คุยตั้งแต่ ${CALL_LONG_SEC} วิ</span><span class="cl-chip short">ต่ำกว่า ${CALL_LONG_SEC} วิ (ไม่รับ / วางสายเร็ว)</span><span class="cl-chip long in">↙ ลูกค้าโทรเข้า</span></div>${callLeadList(e.list)}</td></tr>`;
       return tr;
     }).join('')}
     <tr class="dm-total"><td style="text-align:left;"><b>รวม</b></td><td class="dm-team"></td><td><b>${withPh.length}</b></td><td><b>${called.length}</b> <span class="dm-th-sub">${pct(called.length, withPh.length)}</span></td><td><b>${never.length}</b></td><td></td><td>${avg.toFixed(1)}</td><td>${Math.round(withPh.reduce((a, l) => a + l.talk, 0) / 60)} นาที</td><td></td></tr>
@@ -4034,7 +4154,7 @@ function fmtPhoneTH(p){
   return d;
 }
 function fmtDurTH(s){ s = Math.round(s || 0); return s >= 60 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' นาที' : s + ' วิ'; }
-const CALL_LONG_SEC = 20;   // คุยเกิน 20 วินาที = นับว่าได้คุยจริง
+const CALL_LONG_SEC = 30;   // คุยตั้งแต่ 30 วินาที = นับว่าได้คุยจริง — ให้ตรงกับ CALL_MIN_SEC (ผู้ใช้กำหนด 20 ต.ค. 2026)
 // เบอร์ประจำตัวเซล (จากชีทเบอร์เซล)
 function salePhoneOf(name){
   if(!name) return '';
@@ -4042,7 +4162,7 @@ function salePhoneOf(name){
   return '';
 }
 function callChip(c){
-  const long = c.dur > CALL_LONG_SEC;
+  const long = c.dur >= CALL_LONG_SEC;
   const [y, m, d] = c.d.split('-').map(Number);
   return `<span class="cl-chip ${long ? 'long' : 'short'}${c.dir === 'I' ? ' in' : ''}" title="${c.dir === 'I' ? 'ลูกค้าโทรเข้า' : 'โทรออก'} · ${escHtml(callerLabel(c.local))} (${fmtPhoneTH(c.local)})">${c.dir === 'I' ? '↙ ' : ''}${d} ${DEMO_TH_MON[m - 1]} ${escHtml(c.t)} · <b>${fmtDurTH(c.dur)}</b></span>`;
 }
@@ -4059,7 +4179,7 @@ function callLeadList(list, showSale){
         <span class="cl-src" title="Source / Channel">${escHtml(l.src || '–')} · ${escHtml(l.ch || '–')}</span>
         ${showSale ? `<span>${l.sale ? saleLabelHtml(l.sale) : '(ยังไม่มีเซล)'}</span>` : ''}
         ${sp ? `<span class="cl-ph sale" title="เบอร์เซลที่ดูแล">เบอร์เซล ${escHtml(fmtPhoneTH(sp))}</span>` : ''}
-        ${l.n ? `<span class="dm-st done">โทร ${l.n} ครั้ง</span><span class="dm-th-sub">คุยเกิน ${CALL_LONG_SEC} วิ ${l.long}/${l.n} สาย</span>` : '<span class="dm-st cancel">ยังไม่เคยโทร</span>'}
+        ${l.n ? `<span class="dm-st done">โทร ${l.n} ครั้ง</span><span class="dm-th-sub">คุยตั้งแต่ ${CALL_LONG_SEC} วิ ${l.long}/${l.n} สาย</span>` : '<span class="dm-st cancel">ยังไม่เคยโทร</span>'}
         ${l.inc ? `<span class="dm-th-sub">ลูกค้าโทรเข้า ${l.inc}</span>` : ''}
         ${l.st ? `<span class="dm-th-sub">· ${escHtml(l.st)}</span>` : ''}
       </div>
@@ -4070,8 +4190,9 @@ function callLeadList(list, showSale){
 
 const CALL_DAY_TARGET = 50;   // เป้าโทรหา Lead ต่อคนต่อวัน (ผู้ใช้กำหนด 16 ต.ค. 2026)
 // "สายที่นับว่าโทรหา Lead" (ผู้ใช้กำหนด 20 ต.ค. 2026):
-//   1) โทรออก ที่ปลายทางเป็นเบอร์ของ Lead  2) โทรเข้า จากเบอร์ของ Lead ที่เบอร์เซลเดียวกันเคยโทรออกหาภายใน CALL_BACK_DAYS วันก่อนหน้า (ลูกค้าโทรกลับ)
+//   (ต้องคุยตั้งแต่ CALL_MIN_SEC วินาที) 1) โทรออก ที่ปลายทางเป็นเบอร์ของ Lead  2) โทรเข้า จากเบอร์ของ Lead ที่เบอร์เซลเดียวกันเคยโทรออกหาภายใน CALL_BACK_DAYS วันก่อนหน้า (ลูกค้าโทรกลับ)
 const CALL_BACK_DAYS = 30;
+const CALL_MIN_SEC = 30;   // นับเฉพาะสายที่คุยตั้งแต่ 30 วินาที (ผู้ใช้กำหนด 20 ต.ค. 2026) — ใช้กับเป้าโทรต่อวัน / Tracking
 let LEAD_CALL_SET = null, LEAD_CALL_KEY = null;
 function leadCallSet(){
   const key = [CALL_ROWS, CALL_ROWS ? CALL_ROWS.length : 0, ALL_LEAD_PHONES];
@@ -4080,9 +4201,9 @@ function leadCallSet(){
   (CALL_ROWS || []).slice().sort((a, b) => (a.d + a.t) < (b.d + b.t) ? -1 : (a.d + a.t) > (b.d + b.t) ? 1 : 0).forEach(c => {
     if(!ALL_LEAD_PHONES.has(c.remote)) return;
     const k = c.local + '|' + c.remote;
-    if(c.dir !== 'I'){ set.add(c); lastOut.set(k, c.d); return; }
+    if(c.dir !== 'I'){ lastOut.set(k, c.d); if(c.dur >= CALL_MIN_SEC) set.add(c); return; }   // โทรออกทุกสาย (แม้ไม่ติด) ทำให้สายโทรกลับนับได้ แต่สายที่นับต้องคุย ≥ CALL_MIN_SEC
     const lo = lastOut.get(k);
-    if(lo && lo >= demoAddDays(c.d, -CALL_BACK_DAYS)) set.add(c);
+    if(lo && lo >= demoAddDays(c.d, -CALL_BACK_DAYS) && c.dur >= CALL_MIN_SEC) set.add(c);
   });
   LEAD_CALL_SET = set; LEAD_CALL_KEY = key;
   return set;
@@ -4101,7 +4222,7 @@ function callsPerDayPanel(from, to, inScope, scope){
     const k = name || c.local;
     let e = per.get(k); if(!e){ e = { k, name, ph: c.local, t: name ? teamOf(name) : '', total: 0, long: 0, by: {}, lg: {}, leads: {} }; per.set(k, e); }
     e.total++; e.by[c.d] = (e.by[c.d] || 0) + 1;
-    if(c.dur > CALL_LONG_SEC){ e.long++; e.lg[c.d] = (e.lg[c.d] || 0) + 1; }
+    if(c.dur >= CALL_LONG_SEC){ e.long++; e.lg[c.d] = (e.lg[c.d] || 0) + 1; }
     (e.leads[c.d] || (e.leads[c.d] = new Set())).add(c.remote);
     dayTot[c.d] = (dayTot[c.d] || 0) + 1;
   });
@@ -4122,14 +4243,14 @@ function callsPerDayPanel(from, to, inScope, scope){
     const avg = e.total / nW, hitDays = workDays.filter(d => (e.by[d] || 0) >= T).length;
     return `<tr><td class="cl-sticky" style="text-align:left;">${label(e)}<div class="dm-th-sub">${fmtPhoneTH(e.ph)}${e.t ? ' · ' + escHtml(e.t) : ''}</div></td>
       <td><b>${fmtNum(e.total)}</b></td><td>${avgCell(avg)}</td><td>${hitDays ? `<b class="dm-ok">${hitDays}</b>` : '0'}<span class="dm-th-sub">/${workDays.length} วัน</span></td><td>${e.total ? Math.round(e.long / e.total * 100) + '%' : '–'}</td>
-      ${days.map(d => { const n = e.by[d] || 0; return `<td class="cl-hm ${lvl(n)}${!n && isWork.has(d) ? ' zero' : ''}" title="${escHtml(e.name || e.ph)} · ${fmtThaiDate(d)} · โทรหา Lead ${n} สาย จากเป้า ${T} (${e.leads[d] ? e.leads[d].size : 0} Lead) · คุยเกิน ${CALL_LONG_SEC} วิ ${e.lg[d] || 0} สาย">${n || (isWork.has(d) ? '0' : '')}</td>`; }).join('')}</tr>`;
+      ${days.map(d => { const n = e.by[d] || 0; return `<td class="cl-hm ${lvl(n)}${!n && isWork.has(d) ? ' zero' : ''}" title="${escHtml(e.name || e.ph)} · ${fmtThaiDate(d)} · โทรหา Lead ${n} สาย จากเป้า ${T} (${e.leads[d] ? e.leads[d].size : 0} Lead) · คุยตั้งแต่ ${CALL_LONG_SEC} วิ ${e.lg[d] || 0} สาย">${n || (isWork.has(d) ? '0' : '')}</td>`; }).join('')}</tr>`;
   }).join('');
   const total = ppl.reduce((a, e) => a + e.total, 0);
   const teamHit = ppl.reduce((a, e) => a + workDays.filter(d => (e.by[d] || 0) >= T).length, 0);
   const totRow = `<tr class="dm-total"><td class="cl-sticky" style="text-align:left;"><b>รวม</b><div class="dm-th-sub">${ppl.length} คน · เป้า ${fmtNum(T * ppl.length)} สาย/วัน</div></td><td><b>${fmtNum(total)}</b></td><td>${avgCell(ppl.length ? total / nW / ppl.length : 0)}<div class="dm-th-sub">ต่อคน</div></td><td>${teamHit}<span class="dm-th-sub">/${workDays.length * ppl.length} คน·วัน</span></td><td></td>${days.map(d => `<td class="cl-hm">${dayTot[d] ? `<b>${dayTot[d]}</b>` : ''}</td>`).join('')}</tr>`;
-  return `<div class="panel"><div class="panel-head"><h2>การโทรต่อวัน (โทรหา Lead) · เป้า ${T} สาย/คน/วัน</h2><span class="hint">ตามวันที่โทร ${fmtThaiDate(from)} – ${fmtThaiDate(to)} · นับสายโทรออกหาเบอร์ของ Lead + สายที่ Lead โทรกลับมา (เคยโทรออกหาเบอร์นั้นภายใน ${CALL_BACK_DAYS} วัน) · ชี้ที่ช่องเพื่อดูรายละเอียด</span></div>
+  return `<div class="panel"><div class="panel-head"><h2>การโทรต่อวัน (โทรหา Lead) · เป้า ${T} สาย/คน/วัน</h2><span class="hint">ตามวันที่โทร ${fmtThaiDate(from)} – ${fmtThaiDate(to)} · นับสายที่คุยตั้งแต่ ${CALL_MIN_SEC} วินาที: โทรออกหาเบอร์ของ Lead + สายที่ Lead โทรกลับมา (เคยโทรออกหาเบอร์นั้นภายใน ${CALL_BACK_DAYS} วัน) · ชี้ที่ช่องเพื่อดูรายละเอียด</span></div>
     <div class="sd-legend"><span><i style="background:#2F7D4F"></i>ถึงเป้า (${T}+ สาย)</span><span><i style="background:#F2C94C"></i>${Math.ceil(T / 2)}–${T - 1} สาย</span><span><i style="background:#F6CFC7"></i>ต่ำกว่า ${Math.ceil(T / 2)} สาย</span><span><i style="background:#fff;border:1px solid #E7B3AA"></i>0 = วันทำงานที่ไม่ได้โทรหา Lead</span></div>
-    ${ppl.length ? `<div class="table-x"><table class="team-table cl-perday"><thead><tr><th class="cl-sticky" style="text-align:left;">เซล</th><th>รวม</th><th style="min-width:90px;">เฉลี่ย/วัน<div class="dm-th-sub">เป้า ${T}</div></th><th>วันที่ถึงเป้า</th><th>คุยเกิน ${CALL_LONG_SEC} วิ</th>${head}</tr></thead>
+    ${ppl.length ? `<div class="table-x"><table class="team-table cl-perday"><thead><tr><th class="cl-sticky" style="text-align:left;">เซล</th><th>รวม</th><th style="min-width:90px;">เฉลี่ย/วัน<div class="dm-th-sub">เป้า ${T}</div></th><th>วันที่ถึงเป้า</th><th>คุยตั้งแต่ ${CALL_LONG_SEC} วิ</th>${head}</tr></thead>
       <tbody>${totRow}${rows}</tbody></table></div>
       <div class="dm-th-sub" style="margin-top:6px;">เฉลี่ย/วัน = สายรวม ÷ ${nW} วันทำงาน (จันทร์–ศุกร์ที่มีการโทรหา Lead · เสาร์–อาทิตย์นับเฉพาะวันที่โทรกันอย่างน้อย 1 ใน 3 ของทีม) · วันที่ถึงเป้า = จำนวนวันทำงานที่โทรหา Lead ได้ ${T} สายขึ้นไป</div>`
       : '<div class="dm-th-sub">ไม่มีสายโทรหา Lead ในช่วงวันที่เลือก</div>'}</div>`;
@@ -4841,7 +4962,7 @@ function renderTracking(){
   const evals = people.map(n => ({ n, t: teamOf(n), ph: salePhoneOf(n), w: trkEvalWeek(mon, today, callMap.get(n), demoMap.get(n), licMap.get(n), callFrom, planMap.get(n), leaveOf(n), ovrMap.get(n + '|' + mon)) }));
   const licNote = salesTo && salesTo < sun ? ` · ยอดขาย (RT) มีถึง ${fmtThaiDate(salesTo)} — License ของสัปดาห์นี้อาจยังไม่ครบ` : '';
   sub.textContent = `${demoWeekLabel(mon)} · ${people.length} คน · เป้า: Demo ${TRK_DEMO_DAY} ร้าน/วัน หรือ โทรหา Lead ${TRK_CALL_DAY} สาย/วัน (1 Demo = ${TRK_DEMO_CALLS} สาย) · ขาย ${TRK_LIC_WEEK} License หรือ Demo สะสม ${TRK_DEMO_WEEK} ร้าน/สัปดาห์ = ผ่านทั้งสัปดาห์${licNote}`;
-  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรหา Lead ≥ ${TRK_CALL_DAY} สาย</b> (โทรออก + สายที่ Lead โทรกลับมา) หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
+  const rules = `<div class="tk-rules"><b>กติกา</b> วันทำงาน (จ.–ศ.) ผ่านเมื่อ <b>Demo ที่ดำเนินการแล้ว ≥ ${TRK_DEMO_DAY} ร้าน</b> หรือ <b>โทรหา Lead ≥ ${TRK_CALL_DAY} สาย</b> (นับเฉพาะสายที่คุยตั้งแต่ ${CALL_MIN_SEC} วินาที · โทรออก + สายที่ Lead โทรกลับมา) หรือ <b>ผสมกัน</b> โดย 1 Demo = ${TRK_DEMO_CALLS} สาย (เช่น Demo 1 + โทร ${TRK_CALL_DAY - TRK_DEMO_CALLS} สาย = ผ่าน) · Demo วันเสาร์–อาทิตย์ใช้ชดเชย Demo ของวันที่ไม่ผ่านได้ (✓*) · สิ้นสัปดาห์ถ้า <b>ขายได้ ≥ ${TRK_LIC_WEEK} License</b> หรือ <b>Demo สะสม ≥ ${TRK_DEMO_WEEK} ร้าน</b> (จ.–อา.) ถือว่าผ่านทั้งสัปดาห์ · วันลา / วันหยุดไม่นับ และเป้า Demo สะสมลดวันละ ${TRK_DEMO_DAY} ร้าน · ไม่ผ่าน = <b>-${TRK_PENALTY} แต้ม/สัปดาห์</b></div>`;
 
   let html = '';
   if(view === 'day'){
@@ -4893,7 +5014,7 @@ function renderTracking(){
           <input type="text" id="tk-ovr-why" maxlength="300" placeholder="เหตุผล (จำเป็น) เช่น ปิดได้ 3 License วันเสาร์" value="${escHtml(dr.why)}">`; })()}
           <button class="btn btn-primary btn-sm" id="tk-ovr-save">${OVR_BUSY ? 'กำลังบันทึก…' : 'บันทึก'}</button><button class="btn btn-ghost btn-sm" id="tk-ovr-cancel">ยกเลิก</button></div></td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
-      <div class="sd-legend" style="margin-top:8px;"><span>✓ ผ่าน · ✓* ผ่านด้วย Demo ชดเชยจากเสาร์–อาทิตย์ · ✗ ไม่ผ่าน · … วันนี้ยังไม่ครบ · D = Demo ที่ดำเนินการแล้ว · ☎ = สายโทรหา Lead (โทรออก + Lead โทรกลับ) · +n = Demo วันเสาร์–อาทิตย์ · นัด n = นัด Demo ที่ยังไม่ถึง/ยังไม่มีผล · ลา / หยุด = ไม่นับวันนั้น</span></div>
+      <div class="sd-legend" style="margin-top:8px;"><span>✓ ผ่าน · ✓* ผ่านด้วย Demo ชดเชยจากเสาร์–อาทิตย์ · ✗ ไม่ผ่าน · … วันนี้ยังไม่ครบ · D = Demo ที่ดำเนินการแล้ว · ☎ = สายโทรหา Lead ที่คุยตั้งแต่ ${CALL_MIN_SEC} วิ (โทรออก + Lead โทรกลับ) · +n = Demo วันเสาร์–อาทิตย์ · นัด n = นัด Demo ที่ยังไม่ถึง/ยังไม่มีผล · ลา / หยุด = ไม่นับวันนั้น</span></div>
       ${rules}${trkOvrLog(mon)}</div>`;
 
     // ---- แต้มสะสมย้อนหลัง ----
@@ -4906,7 +5027,7 @@ function renderTracking(){
         <td>${h.pts ? `<b class="dm-gap">${h.pts}</b>` : '<b>0</b>'}</td></tr>`).join('')}
       </tbody></table></div><div class="dm-th-sub" style="margin-top:6px;">✓ ผ่าน · ✓ L ผ่านเพราะขายครบ ${TRK_LIC_WEEK} License · ✓ D ผ่านเพราะ Demo สะสมครบ ${TRK_DEMO_WEEK} · ✓ A / -${TRK_PENALTY} A = Admin ปรับผล (ดูเหตุผลที่ช่อง) · -${TRK_PENALTY} ไม่ผ่าน · … สัปดาห์ยังไม่จบ</div></div>`;
   }
-  html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall: สายโทรออกที่ปลายทางเป็นเบอร์ของ Lead + สายโทรเข้าจากเบอร์ Lead ที่เซลเคยโทรออกหาภายใน ${CALL_BACK_DAYS} วัน (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
+  html += `<div class="dm-foot">ที่มา: Demo = ชีทการนัดหมาย (จุดประสงค์ Demo · Online / On Site / Visit Demo · สถานะ "ดำเนินการตามนัดหมาย" · นับตามวันที่นัดและ "Sale ที่ดูแล") · การโทร = ข้อมูล OneCall เฉพาะสายที่คุยตั้งแต่ ${CALL_MIN_SEC} วินาที: สายโทรออกที่ปลายทางเป็นเบอร์ของ Lead + สายโทรเข้าจากเบอร์ Lead ที่เซลเคยโทรออกหาภายใน ${CALL_BACK_DAYS} วัน (เบอร์เซลจับคู่จากชีทเบอร์เซล) · License = ชีท RT / RT Detail (Goods Cat = Software) ตามวันที่ชำระเงิน · ยังไม่รองรับวันหยุดนักขัตฤกษ์และวันลา — วันเหล่านี้จะขึ้นว่าไม่ผ่าน</div>`;
   body.innerHTML = html;
 }
 // ===== ใบเสนอราคา (QT) — ไฟล์ส่วนแบ่งการขาย แท็บ QT (ผู้ใช้เพิ่ม 19 ต.ค. 2026) =====
@@ -5327,4 +5448,4 @@ loadData();
 
 </body>
 </html>
-<!-- build: v40 2026-10-20 count lead callbacks -->
+<!-- build: v42 2026-10-20 calls count from 30s -->
